@@ -97,15 +97,24 @@ function buildSky() {
   disc.position.copy(DISC_DIR).multiplyScalar(9200);
   disc.lookAt(0, 0, 0);
   scene.add(disc);
-  const halo = new THREE.Mesh(
-    new THREE.CircleGeometry(720, 32),
-    new THREE.MeshBasicMaterial({
-      color: 0xffc86e, transparent: true, opacity: 0.28, fog: false,
-    })
-  );
-  halo.position.copy(DISC_DIR).multiplyScalar(9180);
-  halo.lookAt(0, 0, 0);
-  scene.add(halo);
+  // (No hard halo disc: its rim read as a flat tan circle against the
+  // sky. The soft glow sprite below does that job.)
+
+  // Soft sun glow so the horizon never reads as a flat orange band.
+  const glowCv = document.createElement('canvas');
+  glowCv.width = 256; glowCv.height = 256;
+  const gg = glowCv.getContext('2d');
+  const grad = gg.createRadialGradient(128, 128, 8, 128, 128, 128);
+  grad.addColorStop(0, 'rgba(255,240,200,0.85)');
+  grad.addColorStop(0.4, 'rgba(255,200,110,0.35)');
+  grad.addColorStop(1, 'rgba(255,180,90,0)');
+  gg.fillStyle = grad;
+  gg.fillRect(0, 0, 256, 256);
+  const glowTex = new THREE.CanvasTexture(glowCv);
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, fog: false, depthWrite: false, transparent: true }));
+  glow.position.copy(DISC_DIR).multiplyScalar(9150);
+  glow.scale.set(5200, 5200, 1);
+  scene.add(glow);
 }
 
 // ------------------------------------------------------------------ sea
@@ -132,19 +141,68 @@ function hashJitter(x, z) {
   return s - Math.floor(s);
 }
 
+/** Smooth 2D value noise from the deterministic hash: no more flat blobs. */
+function valueNoise(x, z, cell) {
+  const xi = Math.floor(x / cell), zi = Math.floor(z / cell);
+  const xf = x / cell - xi, zf = z / cell - zi;
+  const s = (t) => t * t * (3 - 2 * t);
+  const u = s(xf), v = s(zf);
+  const h00 = hashJitter(xi, zi), h10 = hashJitter(xi + 1, zi);
+  const h01 = hashJitter(xi, zi + 1), h11 = hashJitter(xi + 1, zi + 1);
+  return (h00 * (1 - u) + h10 * u) * (1 - v) + (h01 * (1 - u) + h11 * u) * v;
+}
+
 function terrainColour(h, x, z) {
   const sand = new THREE.Color(0xe9d29b);
+  const wet = new THREE.Color(0xc7a06b);
   const grass = new THREE.Color(0x55873f);
+  const grass2 = new THREE.Color(0x6d9a45);
   const deep = new THREE.Color(0x356636);
   const rock = new THREE.Color(0x6b6258);
   const c = new THREE.Color();
-  if (h < 1.5) c.copy(sand);
+  // Large + medium patch noise so no island reads as one flat colour.
+  const n1 = valueNoise(x, z, 260);
+  const n2 = valueNoise(x + 900, z - 400, 90);
+  if (h < 1.0) c.copy(wet); // wet sand at the waterline
+  else if (h < 1.5) c.copy(sand);
   else if (h < 9) c.copy(sand).lerp(grass, (h - 1.5) / 7.5);
-  else if (h < 46) c.copy(grass).lerp(deep, (h - 9) / 37);
+  else if (h < 46) c.copy(grass).lerp(grass2, n1).lerp(deep, (h - 9) / 37);
   else c.copy(deep).lerp(rock, Math.min(1, (h - 46) / 40));
-  const j = 0.92 + hashJitter(x, z) * 0.16;
+  const j = 0.90 + n2 * 0.20;
   c.multiplyScalar(j);
   return c;
+}
+
+/** Procedural grain for the terrain: sand speckles, grass blades, rock
+ *  grit, drawn once from the seeded hash so every run matches. */
+function makeTerrainTexture() {
+  const S = 1024;
+  const cv = document.createElement('canvas');
+  cv.width = S; cv.height = S;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#ffffff';
+  g.fillRect(0, 0, S, S);
+  // Soft large blotches.
+  for (let i = 0; i < 260; i++) {
+    const x = hashJitter(i * 3.7, 11) * S, y = hashJitter(23, i * 5.1) * S;
+    const r = 18 + hashJitter(i, i * 2.3) * 70;
+    const v = hashJitter(i * 7.7, i * 1.9);
+    g.fillStyle = v < 0.5 ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.06)';
+    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+  }
+  // Fine speckle.
+  for (let i = 0; i < 9000; i++) {
+    const x = hashJitter(i * 1.31, 7.7) * S, y = hashJitter(3.3, i * 1.77) * S;
+    const v = hashJitter(i * 9.1, i * 4.4);
+    g.fillStyle = v < 0.33 ? 'rgba(0,0,0,0.10)' : v < 0.66 ? 'rgba(255,255,255,0.10)' : 'rgba(120,90,40,0.08)';
+    g.fillRect(x, y, 1.6, 1.6);
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.anisotropy = 4;
+  return tex;
 }
 
 function buildTerrain() {
@@ -169,7 +227,7 @@ function buildTerrain() {
   }
   geo.setAttribute('color', new THREE.BufferAttribute(colours, 3));
   geo.computeVertexNormals();
-  const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, map: makeTerrainTexture() });
   const ground = new THREE.Mesh(geo, mat);
   ground.receiveShadow = true;
   scene.add(ground);
@@ -199,18 +257,32 @@ function buildPalms() {
   const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, n);
   trunks.castShadow = true;
 
-  const crownGeo = new THREE.IcosahedronGeometry(4.4, 0);
-  crownGeo.scale(1, 0.55, 1);
-  crownGeo.translate(0, 10.2, 0);
-  const crownMat = new THREE.MeshLambertMaterial({ color: 0x2c6b34 });
-  const crowns = new THREE.InstancedMesh(crownGeo, crownMat, n);
-  crowns.castShadow = true;
+  // Crown: layered fronds, not a lollipop blob — seven drooping fronds
+  // per palm, each a flattened tapered cone, fanning from a small heart.
+  const frondGeo = new THREE.ConeGeometry(1.05, 8.5, 4);
+  frondGeo.scale(1, 1, 0.20);
+  frondGeo.rotateX(Math.PI / 2); // point along +Z
+  frondGeo.translate(0, 0, 4.2); // base at the crown top
+  const frondMat = new THREE.MeshLambertMaterial({ color: 0x2f7a38 });
+  const fronds = new THREE.InstancedMesh(frondGeo, frondMat, n * 7);
+  fronds.castShadow = true;
+  const heartGeo = new THREE.IcosahedronGeometry(1.9, 0);
+  heartGeo.translate(0, 9.6, 0);
+  const heartMat = new THREE.MeshLambertMaterial({ color: 0x245c2c });
+  const hearts = new THREE.InstancedMesh(heartGeo, heartMat, n);
+  hearts.castShadow = true;
 
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const e = new THREE.Euler();
   const v = new THREE.Vector3();
   const sv = new THREE.Vector3();
+  const fm = new THREE.Matrix4();
+  const fq = new THREE.Quaternion();
+  const fe = new THREE.Euler();
+  const fp = new THREE.Vector3();
+  const fs = new THREE.Vector3();
+  const frondGreen = new THREE.Color();
   spots.forEach((p, i) => {
     const y = Math.max(1, World.terrainHeightAt(p.x, p.z));
     e.set((hashJitter(p.x, p.z) - 0.5) * 0.16, hashJitter(p.z, p.x) * Math.PI * 2, (hashJitter(p.x + 7, p.z) - 0.5) * 0.16);
@@ -219,12 +291,29 @@ function buildPalms() {
     sv.set(p.s, p.s, p.s);
     m.compose(v, q, sv);
     trunks.setMatrixAt(i, m);
-    crowns.setMatrixAt(i, m);
+    hearts.setMatrixAt(i, m);
+    // Seven fronds fanning out from the crown top, each drooping down
+    // at its own angle so no two palms share a silhouette.
+    for (let j = 0; j < 7; j++) {
+      const az = (j / 7) * Math.PI * 2 + hashJitter(p.x, p.z + j) * 0.6;
+      const droop = 0.55 + hashJitter(p.x + j, p.z) * 0.5;
+      fe.set(droop, az, 0, 'YXZ');
+      fq.setFromEuler(fe);
+      fp.set(p.x, y - 0.4 + 9.6 * p.s, p.z);
+      fs.set(p.s, p.s, p.s);
+      fm.compose(fp, fq, fs);
+      fronds.setMatrixAt(i * 7 + j, fm);
+      frondGreen.setHex(hashJitter(p.x + j * 3, p.z) < 0.5 ? 0x2f7a38 : 0x3f9148);
+      fronds.setColorAt(i * 7 + j, frondGreen);
+    }
   });
   trunks.instanceMatrix.needsUpdate = true;
-  crowns.instanceMatrix.needsUpdate = true;
+  hearts.instanceMatrix.needsUpdate = true;
+  fronds.instanceMatrix.needsUpdate = true;
+  if (fronds.instanceColor) fronds.instanceColor.needsUpdate = true;
   scene.add(trunks);
-  scene.add(crowns);
+  scene.add(hearts);
+  scene.add(fronds);
 
   // A few grey boulders on the higher ridges.
   const rockGeo = new THREE.DodecahedronGeometry(3.2, 0);
@@ -269,17 +358,24 @@ function buildFarIslands() {
 const cloudPuffs = [];
 
 function buildClouds() {
+  // Warm emissive lift: the sun sits behind the course, so the faces
+  // toward the camera would otherwise read as flat dark grey.
   const mat = new THREE.MeshLambertMaterial({
     color: 0xfff6e8, transparent: true, opacity: 0.88,
+    emissive: 0x7a6a58, emissiveIntensity: 0.55,
   });
   for (const c of World.clouds) {
     const group = new THREE.Group();
-    const puffs = 4;
-    for (let k = 0; k < puffs; k++) {
-      const s = c.s * (0.5 + k * 0.18);
-      const puff = new THREE.Mesh(new THREE.SphereGeometry(s, 12, 8), mat);
-      puff.scale.y = 0.6;
-      puff.position.set((k - 1.5) * c.s * 0.5, (k % 2) * 7 - 3, (k % 3 - 1) * c.s * 0.18);
+    // Seven overlapping puffs in a flat-topped cluster: a cloud with
+    // volume, not four spheres in a row.
+    const offsets = [
+      [-1.4, 0, 0, 1.0], [-0.7, 6, 0.2, 0.8], [0, 2, -0.2, 1.15],
+      [0.7, 7, 0.1, 0.85], [1.4, 1, -0.1, 0.9], [-0.3, 10, 0.3, 0.6], [0.4, -3, -0.3, 0.7],
+    ];
+    for (const [ox, oy, oz, f] of offsets) {
+      const puff = new THREE.Mesh(new THREE.SphereGeometry(c.s * f, 12, 8), mat);
+      puff.scale.y = 0.55;
+      puff.position.set(ox * c.s * 0.55, oy, oz * c.s * 0.5);
       group.add(puff);
     }
     group.position.set(c.x, c.y, c.z);
@@ -297,7 +393,7 @@ function buildRunway() {
 
   const asphalt = new THREE.Mesh(
     new THREE.BoxGeometry(rw.width, 2.5, rw.length),
-    new THREE.MeshLambertMaterial({ color: 0x4a4f57 })
+    new THREE.MeshLambertMaterial({ color: 0x6b7078 })
   );
   asphalt.position.y = -1.2;
   asphalt.receiveShadow = true;
@@ -334,9 +430,10 @@ function buildRunway() {
   bars.instanceMatrix.needsUpdate = true;
   group.add(bars);
 
-  // Warm edge lights, glowing.
-  const lightGeo = new THREE.SphereGeometry(1.7, 8, 6);
-  const lightMat = new THREE.MeshBasicMaterial({ color: 0xffd27a });
+  // Warm edge lights, glowing — bigger and brighter so the strip reads
+  // from the approach, not just on top of it.
+  const lightGeo = new THREE.SphereGeometry(2.4, 8, 6);
+  const lightMat = new THREE.MeshBasicMaterial({ color: 0xffe1a0 });
   const perSide = Math.floor(rw.length / 95) + 1;
   const lights = new THREE.InstancedMesh(lightGeo, lightMat, perSide * 2);
   let li = 0;
@@ -438,6 +535,71 @@ function buildPlane() {
   canopy.position.set(0, 1.35, 1.4);
   plane.add(canopy);
 
+  // Canopy frame: dark base ring + centre mullion, so the glass reads as
+  // a framed cockpit instead of a blue blob.
+  const frameRing = new THREE.Mesh(new THREE.TorusGeometry(1.35, 0.13, 8, 24), dark);
+  frameRing.rotation.x = Math.PI / 2;
+  frameRing.scale.set(1, 1.9, 1);
+  frameRing.position.set(0, 1.05, 1.4);
+  plane.add(frameRing);
+  const mullion = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.12, 2.3), dark);
+  mullion.position.set(0, 2.28, 1.4);
+  plane.add(mullion);
+
+  // Livery band around the front fuselage + cheatline stripe.
+  const livery = new THREE.Mesh(new THREE.CylinderGeometry(1.74, 1.48, 4.2, 14, 1, true), new THREE.MeshStandardMaterial({ color: 0xc2410c, roughness: 0.5, metalness: 0.2, side: THREE.DoubleSide }));
+  livery.rotation.x = Math.PI / 2;
+  livery.position.z = 1.9;
+  plane.add(livery);
+
+  // Engine cowling: wider ring at the nose (the spinner covers the front).
+  const cowl = new THREE.Mesh(new THREE.CylinderGeometry(1.82, 1.78, 1.7, 14, 1, true), orange);
+  cowl.rotation.x = Math.PI / 2;
+  cowl.position.z = 4.4;
+  plane.add(cowl);
+
+  // Exhaust stacks on the nose flanks.
+  for (const side of [-1, 1]) {
+    const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 1.3, 8), dark);
+    stack.rotation.x = Math.PI / 2.6;
+    stack.position.set(side * 1.55, -0.4, 4.4);
+    plane.add(stack);
+  }
+
+  // Wing struts: fuselage belly to wing underside.
+  function wingStrut(from, to, r) {
+    const dir = new THREE.Vector3().subVectors(to, from);
+    const len = dir.length();
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 6), dark);
+    m.position.copy(from).addScaledVector(dir, 0.5);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+    return m;
+  }
+  for (const side of [-1, 1]) {
+    plane.add(wingStrut(new THREE.Vector3(side * 1.1, -1.0, 1.4), new THREE.Vector3(side * 4.6, 0.1, 0.9), 0.16));
+    plane.add(wingStrut(new THREE.Vector3(side * 1.1, -1.0, -0.2), new THREE.Vector3(side * 4.6, 0.1, -0.6), 0.16));
+  }
+
+  // Pitot tube under the right wing + landing light on the left.
+  const pitot = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 1.6, 6), dark);
+  pitot.rotation.x = Math.PI / 2;
+  pitot.position.set(6, 0.05, 2.4);
+  plane.add(pitot);
+  const landLight = new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 6), new THREE.MeshBasicMaterial({ color: 0xfff2c0 }));
+  landLight.position.set(-6, 0.35, 2.9);
+  plane.add(landLight);
+
+  // Tail tip cone + tailplane tip caps.
+  const tailTip = new THREE.Mesh(new THREE.ConeGeometry(0.9, 1.6, 10), orange);
+  tailTip.rotation.x = -Math.PI / 2;
+  tailTip.position.z = -5.6;
+  plane.add(tailTip);
+  for (const side of [-1, 1]) {
+    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.45, 2.6), white);
+    tip.position.set(side * 4.5, 0.4, -4.6);
+    plane.add(tip);
+  }
+
   // Propeller: spinner + two blades, spun every frame.
   const prop = new THREE.Group();
   prop.position.z = 7.0;
@@ -467,7 +629,7 @@ function buildPlane() {
   plane.userData.navL = navL;
   plane.userData.navR = navR;
 
-  // Fixed gear: two struts + wheels.
+  // Fixed gear: two struts + wheels with fairings.
   for (const side of [-1, 1]) {
     const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 2.6, 6), dark);
     strut.position.set(side * 2.2, -1.9, 1.2);
@@ -476,6 +638,10 @@ function buildPlane() {
     wheel.rotation.z = Math.PI / 2;
     wheel.position.set(side * 2.2, -3.1, 1.2);
     plane.add(wheel);
+    const fairing = new THREE.Mesh(new THREE.SphereGeometry(1.0, 12, 8), orange);
+    fairing.scale.set(0.55, 1.05, 1.35);
+    fairing.position.set(side * 2.2, -3.0, 1.2);
+    plane.add(fairing);
   }
 
   plane.traverse((o) => { if (o.isMesh) o.castShadow = true; });
@@ -535,12 +701,21 @@ function draw(S) {
   sun.target.updateMatrixWorld();
 
   // Chase camera: behind and above, smoothed, rolled with the bank.
+  // Slightly off-centre — the camera sits a touch to starboard and looks
+  // a touch to port, so the nose and spinning prop read in frame.
   fwd.set(Math.sin(S.heading), 0, Math.cos(S.heading));
-  camTarget.copy(plane.position).addScaledVector(fwd, -40).add(new THREE.Vector3(0, 13, 0));
-  const k = 1 - Math.exp(-dt * 4.5);
-  camPos.lerp(camTarget, k);
+  const right = new THREE.Vector3(fwd.z, 0, -fwd.x);
+  camTarget.copy(plane.position).addScaledVector(fwd, -40).addScaledVector(right, 8).add(new THREE.Vector3(0, 13, 0));
+  if (S.shot) {
+    // Screenshot pose: snap straight to the composed frame instead of
+    // lerping in from the spawn point over several seconds.
+    camPos.copy(camTarget);
+  } else {
+    const k = 1 - Math.exp(-dt * 4.5);
+    camPos.lerp(camTarget, k);
+  }
   camera.position.copy(camPos);
-  camLook.copy(plane.position).addScaledVector(fwd, 90).add(new THREE.Vector3(0, 1, 0));
+  camLook.copy(plane.position).addScaledVector(fwd, 90).addScaledVector(right, -5).add(new THREE.Vector3(0, 1, 0));
   up.set(Math.sin(S.bank * 0.28), Math.cos(S.bank * 0.28), 0);
   camera.up.copy(up);
   camera.lookAt(camLook);

@@ -10,6 +10,14 @@
 // import map — the game makes zero network requests at runtime. The lit
 // instruments and HUD are a 2D overlay in game/src/hud.js.
 //
+// v3 realism pass (user: "Flight game bikin 3d realistis" / "Perbaiki yg
+// bikin lu engga pede"): the plane is a detailed bush aircraft instead of
+// bare primitives, the terrain carries a procedural texture, palms grow
+// layered fronds, clouds are voluminous and fill the approach sky, the
+// runway reads brighter, and the chase camera sits a touch off-centre so
+// the nose and prop read in frame. Gameplay, controls and HUD are
+// unchanged from v2.
+//
 // Outside the grader, MAKEFUN_OUTPUT_DIR stands in for /output.
 // Node 22, standard library only; deterministic: the same repository
 // always writes the same bytes.
@@ -67,7 +75,7 @@ async function handIn(): Promise<void> {
 
   const dossierText = await readFile(join(out, 'dossier.json'), 'utf8');
   const shotCount = (await readdir(join(out, 'screenshots'))).length;
-  console.log(`archipelago-run: wrote ${out} (dossier.json ${dossierText.length} chars, ${shotCount} screenshots)`);
+  console.log(`archipelago-run v3: wrote ${out} (dossier.json ${dossierText.length} chars, ${shotCount} screenshots)`);
 }
 
 await handIn();

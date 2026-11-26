@@ -279,19 +279,19 @@ const Hud = (() => {
 
   function endCard(S, title, lines, color) {
     ctx.save();
-    ctx.fillStyle = 'rgba(6, 20, 34, 0.55)';
+    ctx.fillStyle = 'rgba(6, 20, 34, 0.32)';
     ctx.fillRect(0, 0, W, H);
-    glassPanel(CX - 360, 150, 720, 240);
+    glassPanel(CX - 280, 120, 560, 190);
     ctx.textAlign = 'center';
     ctx.fillStyle = color;
-    ctx.font = 'bold 52px system-ui, sans-serif';
-    ctx.fillText(title, CX, 230);
+    ctx.font = 'bold 44px system-ui, sans-serif';
+    ctx.fillText(title, CX, 188);
     ctx.fillStyle = '#eaf6ff';
-    ctx.font = '20px system-ui, sans-serif';
-    lines.forEach((line, i) => ctx.fillText(line, CX, 280 + i * 32));
+    ctx.font = '18px system-ui, sans-serif';
+    lines.forEach((line, i) => ctx.fillText(line, CX, 232 + i * 30));
     ctx.fillStyle = '#ffd27a';
-    ctx.font = 'bold 20px system-ui, sans-serif';
-    ctx.fillText('PRESS  R  TO FLY AGAIN', CX, 362);
+    ctx.font = 'bold 19px system-ui, sans-serif';
+    ctx.fillText('PRESS  R  TO FLY AGAIN', CX, 288);
     ctx.restore();
   }
 

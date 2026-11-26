@@ -25,9 +25,12 @@ in the sea, run dry, or let the timer hit zero and the sortie is over.
 
 ## What is in the frame
 
-- Chase view over recognisable terrain: sea, sand-ringed islands with palms,
+- Chase view over recognisable terrain: sea, sand-ringed islands with
+  procedurally textured grass, sand and highland, layered-frond palms,
   and the Coral Bay runway island
-- The aircraft in frame, with nav lights and a spinning prop
+- The aircraft in frame: a detailed bush plane with framed canopy, livery
+  band, wing struts, wheel fairings, nav lights and a spinning prop,
+  filmed from a slightly off-centre chase angle
 - Lit instruments: altimeter, airspeed and throttle dials, artificial
   horizon, compass tape — plus altitude, speed and heading on the HUD
 - A target ring (or the runway) ahead at all times

@@ -56,14 +56,32 @@ const World = (() => {
   /** Home island the runway sits on: wide, flat-topped, unmistakable. */
   const homeIsland = { z: 9300, x: 0, r: 640, h: 26 };
 
-  /** Slow clouds for the sky. */
+  /** Slow clouds for the sky — plus a bank over the approach corridor
+   *  and a few low ones on the horizon, so the final-approach sky is
+   *  never one flat orange band. */
   const clouds = [];
-  for (let i = 0; i < 16; i++) {
+  for (let i = 0; i < 22; i++) {
     clouds.push({
       x: (rng() - 0.5) * 2600,
       y: 420 + rng() * 260,
       z: 300 + rng() * 9000,
       s: 60 + rng() * 130,
+    });
+  }
+  for (let i = 0; i < 5; i++) {
+    clouds.push({
+      x: (rng() - 0.5) * 1100,
+      y: 380 + rng() * 260,
+      z: 8600 + rng() * 1300,
+      s: 90 + rng() * 90,
+    });
+  }
+  for (let i = 0; i < 3; i++) {
+    clouds.push({
+      x: (rng() - 0.5) * 1800,
+      y: 220 + rng() * 90,
+      z: 8800 + rng() * 900,
+      s: 70 + rng() * 60,
     });
   }
 
