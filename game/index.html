@@ -6,16 +6,27 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   html, body { margin: 0; padding: 0; background: #0b1e33; height: 100%; overflow: hidden; }
-  canvas { display: block; width: 100vw; height: 100vh; }
+  #stage { position: fixed; inset: 0; }
+  canvas { display: block; position: absolute; inset: 0; width: 100vw; height: 100vh; }
+  #gl { z-index: 0; }
+  #hud { z-index: 1; pointer-events: none; }
 </style>
+<!-- three.js 0.160.0 vendored locally (MIT); no network at runtime. -->
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
 </head>
 <body>
-<canvas id="game" width="1280" height="720"></canvas>
+<div id="stage">
+<canvas id="gl" width="1280" height="720"></canvas>
+<canvas id="hud" width="1280" height="720"></canvas>
+</div>
 <script src="src/audio.js"></script>
 <script src="src/input.js"></script>
 <script src="src/world.js"></script>
-<script src="src/render.js"></script>
+<script src="src/hud.js"></script>
 <script src="src/main.js"></script>
 <script src="src/shots.js"></script>
+<script type="module" src="src/render3d.js"></script>
 </body>
 </html>

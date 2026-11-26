@@ -21,7 +21,7 @@ const Input = (() => {
     keys.delete(e.code);
   }
   function onMouseMove(e) {
-    const canvas = document.getElementById('game');
+    const canvas = document.getElementById('gl');
     const rect = canvas.getBoundingClientRect();
     mouse.x = ((e.clientX - rect.left) / rect.width) * 1280;
     mouse.y = ((e.clientY - rect.top) / rect.height) * 720;

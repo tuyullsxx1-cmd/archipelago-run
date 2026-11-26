@@ -4,9 +4,8 @@
 // timer runs out. Rings refuel you; the sea and the islands do not forgive.
 
 const Game = (() => {
-  const canvas = document.getElementById('game');
-  const ctx = canvas.getContext('2d');
-
+  // The 3D world is WebGL (window.Render3D, a module) and the instruments
+  // are a 2D overlay (window.Hud); both are drawn every frame below.
   const START = {
     x: 0, z: 0, alt: 230, speed: 0, throttle: 0.55,
     pitch: 0, bank: 0, heading: 0, fuel: 100, score: 0,
@@ -63,7 +62,7 @@ const Game = (() => {
   /** Deterministic poses used by shots.js (?shot=N) for screenshots. */
   function poseTitle() {
     Object.assign(S, {
-      state: 'title', shot: true, x: 0, z: 2600, alt: 260, speed: 130,
+      state: 'title', shot: true, x: 0, z: 500, alt: 260, speed: 130,
       throttle: 0.6, pitch: 0.06, bank: 0.08, heading: 0, fuel: 100,
       score: 0, nextRing: 0, timeLeft: 240, msg: '', msgT: 0,
     });
@@ -72,7 +71,7 @@ const Game = (() => {
     const ring = World.rings[2];
     Object.assign(S, {
       state: 'flying', shot: true, x: ring.x - 40, z: ring.z - 420,
-      alt: ring.y, speed: 175, throttle: 0.8, pitch: 0.02, bank: 0.06,
+      alt: ring.y + 40, speed: 175, throttle: 0.8, pitch: 0.02, bank: 0.06,
       heading: Math.atan2(40, 420), fuel: 82, score: 520, nextRing: 2,
       timeLeft: 187, msg: '', msgT: 0,
     });
@@ -229,7 +228,8 @@ const Game = (() => {
     else if (S.state === 'paused' && (Input.consume('KeyP') || Input.consume('Enter'))) S.state = 'flying';
 
     update(dt);
-    Render.draw(ctx, S);
+    if (window.Render3D) window.Render3D.draw(S);
+    if (window.Hud) window.Hud.draw(S);
     requestAnimationFrame(frame);
   }
 

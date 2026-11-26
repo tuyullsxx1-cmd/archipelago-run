@@ -4,6 +4,12 @@
 // directory, then writes /output/dossier.json with buildDossier from the
 // kit's vendor/makefun-game.ts (copied unchanged from the kit).
 //
+// The game is real 3D WebGL: game/src/render3d.js builds the archipelago,
+// the bush plane, the rings and the runway with three.js 0.160.0, vendored
+// as game/vendor/three.module.min.js (MIT) and loaded from a local
+// import map — the game makes zero network requests at runtime. The lit
+// instruments and HUD are a 2D overlay in game/src/hud.js.
+//
 // Outside the grader, MAKEFUN_OUTPUT_DIR stands in for /output.
 // Node 22, standard library only; deterministic: the same repository
 // always writes the same bytes.
@@ -38,6 +44,11 @@ async function handIn(): Promise<void> {
 
   await mustExist(gameDir, 'game/');
   await mustExist(shotsDir, 'screenshots/');
+
+  // The 3D renderer needs its vendored engine: three.js 0.160.0, loaded
+  // from a local import map. Fail loudly here rather than handing in a
+  // game whose WebGL scene cannot start.
+  await mustExist(join(gameDir, 'vendor'), 'game/vendor/ (vendored three.js)');
 
   await rm(out, { recursive: true, force: true });
   await mkdir(out, { recursive: true });
