@@ -27,7 +27,7 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.12;
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.Fog(0xe9b878, 1300, 7200);
+scene.fog = new THREE.Fog(0xe8a86a, 950, 6200);
 
 const camera = new THREE.PerspectiveCamera(62, 1280 / 720, 0.5, 22000);
 camera.position.set(0, 275, -60);
@@ -113,24 +113,95 @@ function buildSky() {
   const glowTex = new THREE.CanvasTexture(glowCv);
   const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, fog: false, depthWrite: false, transparent: true }));
   glow.position.copy(DISC_DIR).multiplyScalar(9150);
-  glow.scale.set(5200, 5200, 1);
+  glow.scale.set(6800, 6800, 1);
   scene.add(glow);
+  // Hot core: a smaller, denser glow so the sun has a bright heart
+  // inside the wide haze instead of one flat wash.
+  const coreCv = document.createElement('canvas');
+  coreCv.width = 128; coreCv.height = 128;
+  const cg = coreCv.getContext('2d');
+  const cgrad = cg.createRadialGradient(64, 64, 2, 64, 64, 64);
+  cgrad.addColorStop(0, 'rgba(255,252,230,0.95)');
+  cgrad.addColorStop(0.5, 'rgba(255,230,160,0.5)');
+  cgrad.addColorStop(1, 'rgba(255,210,120,0)');
+  cg.fillStyle = cgrad;
+  cg.fillRect(0, 0, 128, 128);
+  const coreTex = new THREE.CanvasTexture(coreCv);
+  const core = new THREE.Sprite(new THREE.SpriteMaterial({ map: coreTex, fog: false, depthWrite: false, transparent: true }));
+  core.position.copy(DISC_DIR).multiplyScalar(9100);
+  core.scale.set(2600, 2600, 1);
+  scene.add(core);
 }
 
 // ------------------------------------------------------------------ sea
 
+let seaMat = null;
+let seaNormalTex = null;
+let foamMat = null;
+const foamRings = [];
+
+/** Procedural wave normal map: a tiled sine-field encoded as RGB
+ *  normals, so the sun glints off moving water instead of a flat sheet. */
+function makeSeaNormalTexture() {
+  const S = 256;
+  const cv = document.createElement('canvas');
+  cv.width = S; cv.height = S;
+  const g = cv.getContext('2d');
+  const img = g.createImageData(S, S);
+  const hAt = (x, y) => {
+    const u = x / S * Math.PI * 2, v = y / S * Math.PI * 2;
+    return Math.sin(u * 3 + v * 2) * 0.6 + Math.sin(u * 5 - v * 3) * 0.35
+      + Math.sin((u + v) * 7) * 0.25;
+  };
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const dx = (hAt((x + 1) % S, y) - hAt((x + S - 1) % S, y)) * 0.55;
+      const dy = (hAt(x, (y + 1) % S) - hAt(x, (y + S - 1) % S)) * 0.55;
+      const i = (y * S + x) * 4;
+      img.data[i] = 128 + dx * 127;
+      img.data[i + 1] = 128 + dy * 127;
+      img.data[i + 2] = 255;
+      img.data[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(56, 56);
+  return tex;
+}
+
 function buildSea() {
   const geo = new THREE.PlaneGeometry(24000, 24000, 1, 1);
-  const mat = new THREE.MeshPhongMaterial({
+  seaNormalTex = makeSeaNormalTexture();
+  seaMat = new THREE.MeshPhongMaterial({
     color: 0x14586e,
-    specular: 0x7a9ab0,
-    shininess: 60,
+    specular: 0xcfe6f2,
+    shininess: 110,
+    normalMap: seaNormalTex,
+    normalScale: new THREE.Vector2(0.85, 0.85),
   });
-  const sea = new THREE.Mesh(geo, mat);
+  const sea = new THREE.Mesh(geo, seaMat);
   sea.rotation.x = -Math.PI / 2;
   sea.position.set(0, 0.4, 5000);
   sea.receiveShadow = true;
   scene.add(sea);
+
+  // Foam rings where the sea meets each island, so the shoreline reads
+  // as surf instead of a hard green/blue edge.
+  foamMat = new THREE.MeshBasicMaterial({
+    color: 0xf2fbff, transparent: true, opacity: 0.34, side: THREE.DoubleSide,
+  });
+  const addFoam = (x, z, r) => {
+    const ring = new THREE.Mesh(new THREE.RingGeometry(r * 0.94, r * 1.07, 40), foamMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(x, 0.75, z);
+    scene.add(ring);
+    foamRings.push({ mesh: ring, base: 1, phase: hashJitter(x, z) * Math.PI * 2 });
+  };
+  for (const isl of World.islands) addFoam(isl.x, isl.z, isl.r);
+  addFoam(World.homeIsland.x, World.homeIsland.z, World.homeIsland.r);
 }
 
 // ---------------------------------------------------------------- terrain
@@ -152,29 +223,42 @@ function valueNoise(x, z, cell) {
   return (h00 * (1 - u) + h10 * u) * (1 - v) + (h01 * (1 - u) + h11 * u) * v;
 }
 
-function terrainColour(h, x, z) {
+function terrainColour(h, x, z, slope) {
   const sand = new THREE.Color(0xe9d29b);
   const wet = new THREE.Color(0xc7a06b);
   const grass = new THREE.Color(0x55873f);
   const grass2 = new THREE.Color(0x6d9a45);
   const deep = new THREE.Color(0x356636);
   const rock = new THREE.Color(0x6b6258);
+  const dirt = new THREE.Color(0x9a7d4f);
   const c = new THREE.Color();
   // Large + medium patch noise so no island reads as one flat colour.
   const n1 = valueNoise(x, z, 260);
   const n2 = valueNoise(x + 900, z - 400, 90);
+  const n3 = valueNoise(x - 500, z + 700, 34);
   if (h < 1.0) c.copy(wet); // wet sand at the waterline
   else if (h < 1.5) c.copy(sand);
   else if (h < 9) c.copy(sand).lerp(grass, (h - 1.5) / 7.5);
   else if (h < 46) c.copy(grass).lerp(grass2, n1).lerp(deep, (h - 9) / 37);
   else c.copy(deep).lerp(rock, Math.min(1, (h - 46) / 40));
+  // Steep ground is bare rock, whatever its height: ridges and cliffs
+  // read as rock faces instead of green slopes.
+  if (slope > 0.55) c.lerp(rock, Math.min(1, (slope - 0.55) * 2.2));
+  // Grass mottling: dry yellow-green patches break the flat green.
+  c.lerp(new THREE.Color(0x8aa04e), Math.max(0, n3 - 0.62) * 1.6);
+  // Dirt clearing around the Coral Bay strip.
+  const rw = World.runway;
+  if (Math.abs(x - rw.x) < 150 && Math.abs(z - rw.z) < 520 && h > 20 && h < 32) {
+    c.lerp(dirt, 0.55);
+  }
   const j = 0.90 + n2 * 0.20;
   c.multiplyScalar(j);
   return c;
 }
 
-/** Procedural grain for the terrain: sand speckles, grass blades, rock
- *  grit, drawn once from the seeded hash so every run matches. */
+/** Procedural grain for the terrain: coloured patches (grass, dirt,
+ *  rock grit) plus fine speckle, drawn once from the seeded hash so
+ *  every run matches. */
 function makeTerrainTexture() {
   const S = 1024;
   const cv = document.createElement('canvas');
@@ -182,16 +266,16 @@ function makeTerrainTexture() {
   const g = cv.getContext('2d');
   g.fillStyle = '#ffffff';
   g.fillRect(0, 0, S, S);
-  // Soft large blotches.
-  for (let i = 0; i < 260; i++) {
+  // Soft large blotches, tinted: grass yellow, dirt tan, rock grey.
+  const tints = ['rgba(120,140,40,0.10)', 'rgba(150,110,50,0.10)', 'rgba(110,105,95,0.10)', 'rgba(255,255,255,0.06)', 'rgba(0,0,0,0.05)'];
+  for (let i = 0; i < 520; i++) {
     const x = hashJitter(i * 3.7, 11) * S, y = hashJitter(23, i * 5.1) * S;
-    const r = 18 + hashJitter(i, i * 2.3) * 70;
-    const v = hashJitter(i * 7.7, i * 1.9);
-    g.fillStyle = v < 0.5 ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.06)';
+    const r = 12 + hashJitter(i, i * 2.3) * 60;
+    g.fillStyle = tints[Math.floor(hashJitter(i * 7.7, i * 1.9) * tints.length)];
     g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
   }
   // Fine speckle.
-  for (let i = 0; i < 9000; i++) {
+  for (let i = 0; i < 12000; i++) {
     const x = hashJitter(i * 1.31, 7.7) * S, y = hashJitter(3.3, i * 1.77) * S;
     const v = hashJitter(i * 9.1, i * 4.4);
     g.fillStyle = v < 0.33 ? 'rgba(0,0,0,0.10)' : v < 0.66 ? 'rgba(255,255,255,0.10)' : 'rgba(120,90,40,0.08)';
@@ -201,6 +285,7 @@ function makeTerrainTexture() {
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(9, 9);
   tex.anisotropy = 4;
   return tex;
 }
@@ -211,16 +296,28 @@ function buildTerrain() {
   geo.rotateX(-Math.PI / 2);
   const pos = geo.attributes.position;
   const colours = new Float32Array(pos.count * 3);
+  const rw = World.runway;
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i);
     const z = pos.getZ(i) + 4900; // plane is centred; course runs z -800..10600
     const h = World.terrainHeightAt(x, z);
+    // Slope from finite differences: steep ground reads as rock.
+    const d = 14;
+    const gx = (World.terrainHeightAt(x + d, z) - World.terrainHeightAt(x - d, z)) / (2 * d);
+    const gz = (World.terrainHeightAt(x, z + d) - World.terrainHeightAt(x, z - d)) / (2 * d);
+    const slope = Math.hypot(gx, gz);
+    // Micro-relief so ridges are never perfectly smooth cones — kept
+    // off the runway island's flat top and under a metre, so the flight
+    // model's collision height still matches what the eye sees.
+    let bump = 0;
+    const nearRunway = Math.abs(x - rw.x) < 520 && Math.abs(z - rw.z) < 620;
+    if (h > 8 && !nearRunway) bump = (valueNoise(x, z, 55) - 0.5) * 1.6;
     // Sink the open-sea floor well below the water plane: at kilometre
     // distances the depth buffer cannot separate two surfaces 0.4 apart,
     // and they shimmer through each other. The beach (h >= 0.5) is kept.
-    pos.setY(i, h < 0.5 ? h - 2.5 : h);
+    pos.setY(i, h < 0.5 ? h - 2.5 : h + bump);
     pos.setZ(i, z);
-    const c = terrainColour(h, x, z);
+    const c = terrainColour(h, x, z, slope);
     colours[i * 3] = c.r;
     colours[i * 3 + 1] = c.g;
     colours[i * 3 + 2] = c.b;
@@ -357,31 +454,76 @@ function buildFarIslands() {
 
 const cloudPuffs = [];
 
+/** Soft cloud-puff texture: several overlapping radial gradients with
+ *  feathered alpha, so a cloud's edge dissolves instead of ending in a
+ *  hard sphere rim. */
+function makeCloudPuffTexture() {
+  const S = 256;
+  const cv = document.createElement('canvas');
+  cv.width = S; cv.height = S;
+  const g = cv.getContext('2d');
+  const blobs = [
+    [128, 150, 92, 0.95], [82, 165, 62, 0.8], [176, 162, 66, 0.8],
+    [110, 118, 58, 0.75], [152, 122, 52, 0.7], [60, 140, 40, 0.55], [200, 140, 44, 0.55],
+  ];
+  for (const [x, y, r, a] of blobs) {
+    const grad = g.createRadialGradient(x, y, 2, x, y, r);
+    grad.addColorStop(0, `rgba(255,250,240,${a})`);
+    grad.addColorStop(0.55, `rgba(255,246,232,${a * 0.55})`);
+    grad.addColorStop(1, 'rgba(255,246,232,0)');
+    g.fillStyle = grad;
+    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+let cloudTex = null;
+
 function buildClouds() {
-  // Warm emissive lift: the sun sits behind the course, so the faces
-  // toward the camera would otherwise read as flat dark grey.
-  const mat = new THREE.MeshLambertMaterial({
-    color: 0xfff6e8, transparent: true, opacity: 0.88,
-    emissive: 0x7a6a58, emissiveIntensity: 0.55,
-  });
+  cloudTex = makeCloudPuffTexture();
   for (const c of World.clouds) {
     const group = new THREE.Group();
-    // Seven overlapping puffs in a flat-topped cluster: a cloud with
-    // volume, not four spheres in a row.
-    const offsets = [
-      [-1.4, 0, 0, 1.0], [-0.7, 6, 0.2, 0.8], [0, 2, -0.2, 1.15],
-      [0.7, 7, 0.1, 0.85], [1.4, 1, -0.1, 0.9], [-0.3, 10, 0.3, 0.6], [0.4, -3, -0.3, 0.7],
-    ];
-    for (const [ox, oy, oz, f] of offsets) {
-      const puff = new THREE.Mesh(new THREE.SphereGeometry(c.s * f, 12, 8), mat);
-      puff.scale.y = 0.55;
-      puff.position.set(ox * c.s * 0.55, oy, oz * c.s * 0.5);
-      group.add(puff);
+    // Four to six layered soft billboards per cloud: from any angle the
+    // cloud reads as volume with a dissolving edge, not stacked balls.
+    const puffs = 4 + Math.floor(hashJitter(c.x, c.z) * 3);
+    for (let i = 0; i < puffs; i++) {
+      const f = 0.7 + hashJitter(c.x + i * 13, c.z) * 0.7;
+      const mat = new THREE.SpriteMaterial({
+        map: cloudTex, transparent: true,
+        opacity: 0.5 + hashJitter(c.z, c.x + i) * 0.35,
+        depthWrite: false,
+      });
+      const spr = new THREE.Sprite(mat);
+      const w = c.s * 2.4 * f;
+      spr.scale.set(w, w * 0.42, 1);
+      spr.position.set(
+        (hashJitter(i * 7, c.x) - 0.5) * c.s * 1.5,
+        (hashJitter(i * 3, c.z) - 0.5) * c.s * 0.35,
+        (hashJitter(c.x, i * 11) - 0.5) * c.s * 0.9
+      );
+      group.add(spr);
     }
     group.position.set(c.x, c.y, c.z);
     group.userData.baseX = c.x;
     scene.add(group);
     cloudPuffs.push(group);
+  }
+
+  // High thin cirrus streaks near the horizon for depth.
+  for (let i = 0; i < 6; i++) {
+    const mat = new THREE.SpriteMaterial({
+      map: cloudTex, transparent: true, opacity: 0.32, depthWrite: false,
+    });
+    const spr = new THREE.Sprite(mat);
+    spr.scale.set(2200 + hashJitter(i, i * 5) * 1600, 130, 1);
+    spr.position.set(
+      (hashJitter(i * 17, 3) - 0.5) * 7000,
+      720 + hashJitter(i * 23, 7) * 260,
+      2400 + hashJitter(i * 29, 11) * 7000
+    );
+    scene.add(spr);
   }
 }
 
@@ -495,10 +637,83 @@ function updateRings(S) {
 
 // --------------------------------------------------------------- aircraft
 
+/** Painted skin for the fuselage: panel seams, rivet rows, a cheatline
+ *  and the registration, drawn on canvas so the white body reads as
+ *  riveted metal instead of a blank tube. */
+function makeFuselageSkin() {
+  const W = 512, H = 256;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#f8f4ea';
+  g.fillRect(0, 0, W, H);
+  // Panel seams along the body.
+  g.strokeStyle = 'rgba(90,80,70,0.35)';
+  g.lineWidth = 1.2;
+  for (const x of [64, 128, 192, 256, 320, 384, 448]) {
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke();
+  }
+  g.beginPath(); g.moveTo(0, H * 0.5); g.lineTo(W, H * 0.5); g.stroke();
+  // Rivet rows beside each seam.
+  g.fillStyle = 'rgba(90,80,70,0.30)';
+  for (const x of [64, 128, 192, 256, 320, 384, 448]) {
+    for (let y = 8; y < H; y += 14) {
+      g.fillRect(x + 3, y, 1.6, 1.6);
+      g.fillRect(x - 5, y, 1.6, 1.6);
+    }
+  }
+  // Orange cheatline along the side.
+  g.fillStyle = '#e8590c';
+  g.fillRect(0, H * 0.60, W, 10);
+  g.fillStyle = '#c2410c';
+  g.fillRect(0, H * 0.60 + 10, W, 3);
+  // Registration on the rear fuselage.
+  g.fillStyle = '#2a3138';
+  g.font = 'bold 30px sans-serif';
+  g.textAlign = 'left';
+  g.fillText('N808AR', 300, H * 0.42);
+  g.font = 'bold 20px sans-serif';
+  g.fillStyle = 'rgba(42,49,56,0.75)';
+  g.fillText('ARCHIPELAGO AIR', 300, H * 0.52);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+/** Wing skin: panel seams, flap/aileron split lines and walkway marks. */
+function makeWingSkin() {
+  const W = 512, H = 128;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#e8590c';
+  g.fillRect(0, 0, W, H);
+  g.strokeStyle = 'rgba(60,20,0,0.4)';
+  g.lineWidth = 1.5;
+  // Flap / aileron split line along the trailing edge.
+  g.beginPath(); g.moveTo(0, H * 0.68); g.lineTo(W, H * 0.68); g.stroke();
+  // Rib seams.
+  for (let x = 32; x < W; x += 42) {
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke();
+  }
+  // Walkway strips at the wing roots.
+  g.fillStyle = 'rgba(30,30,30,0.55)';
+  g.fillRect(W * 0.42, 0, 26, H);
+  g.fillRect(W * 0.55, 0, 26, H);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
 function buildPlane() {
   const plane = new THREE.Group();
-  const white = new THREE.MeshStandardMaterial({ color: 0xf8f4ea, roughness: 0.45, metalness: 0.25 });
+  const fuselageSkin = makeFuselageSkin();
+  const wingSkin = makeWingSkin();
+  const white = new THREE.MeshStandardMaterial({ color: 0xf8f4ea, roughness: 0.45, metalness: 0.25, map: fuselageSkin });
   const orange = new THREE.MeshStandardMaterial({ color: 0xe8590c, roughness: 0.5, metalness: 0.2 });
+  const wingMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5, metalness: 0.2, map: wingSkin });
   const dark = new THREE.MeshStandardMaterial({ color: 0x2a3138, roughness: 0.6, metalness: 0.3 });
   const glass = new THREE.MeshPhongMaterial({ color: 0x123f52, shininess: 220, specular: 0xbfe6ff });
 
@@ -512,8 +727,9 @@ function buildPlane() {
   nose.position.z = 5.6;
   plane.add(nose);
 
-  // Main wing + tailplane + fin.
-  const wing = new THREE.Mesh(new THREE.BoxGeometry(26, 0.55, 4.6), orange);
+  // Main wing + tailplane + fin. The wing wears the painted skin:
+  // rib seams, flap split line and root walkways.
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(26, 0.55, 4.6), wingMat);
   wing.position.set(0, 0.35, 0.6);
   plane.add(wing);
   const wingTipL = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.6, 4.6), white);
@@ -545,6 +761,36 @@ function buildPlane() {
   const mullion = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.12, 2.3), dark);
   mullion.position.set(0, 2.28, 1.4);
   plane.add(mullion);
+  // Cross mullions: the canopy reads as framed panes, not one bubble.
+  for (const dz of [0.55, 2.25]) {
+    const cross = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.9, 0.12), dark);
+    cross.position.set(0, 1.85, dz);
+    cross.rotation.x = -0.5;
+    plane.add(cross);
+  }
+
+  // Pilot: helmet + headrest inside the glass, so the cockpit is
+  // occupied instead of empty.
+  const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.52, 12, 10), new THREE.MeshStandardMaterial({ color: 0x3a3f45, roughness: 0.35, metalness: 0.4 }));
+  helmet.position.set(0, 1.55, 1.1);
+  plane.add(helmet);
+  const visor = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 8, 0, Math.PI * 2, 0, 0.9), new THREE.MeshPhongMaterial({ color: 0x0e2a3a, shininess: 260, specular: 0xdff2ff }));
+  visor.position.set(0, 1.58, 1.35);
+  visor.rotation.x = 0.5;
+  plane.add(visor);
+  const headrest = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.0, 0.35), dark);
+  headrest.position.set(0, 1.35, 0.35);
+  plane.add(headrest);
+
+  // Antenna mast + wire to the fin.
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.12, 1.4, 6), dark);
+  mast.position.set(0, 2.2, -1.6);
+  mast.rotation.x = -0.25;
+  plane.add(mast);
+  const wire = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 3.4, 4), dark);
+  wire.position.set(0, 2.9, -3.0);
+  wire.rotation.x = Math.PI / 2.35;
+  plane.add(wire);
 
   // Livery band around the front fuselage + cheatline stripe.
   const livery = new THREE.Mesh(new THREE.CylinderGeometry(1.74, 1.48, 4.2, 14, 1, true), new THREE.MeshStandardMaterial({ color: 0xc2410c, roughness: 0.5, metalness: 0.2, side: THREE.DoubleSide }));
@@ -600,20 +846,79 @@ function buildPlane() {
     plane.add(tip);
   }
 
+  // Registration plates on both sides of the fin + a red rudder stripe,
+  // so the tail reads from the chase view too.
+  const regCv = document.createElement('canvas');
+  regCv.width = 256; regCv.height = 96;
+  const rg = regCv.getContext('2d');
+  rg.fillStyle = '#f8f4ea';
+  rg.fillRect(0, 0, 256, 96);
+  rg.fillStyle = '#c2410c';
+  rg.font = 'bold 52px sans-serif';
+  rg.textAlign = 'center';
+  rg.fillText('N808AR', 128, 66);
+  const regTex = new THREE.CanvasTexture(regCv);
+  regTex.colorSpace = THREE.SRGBColorSpace;
+  for (const side of [-1, 1]) {
+    const plate = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.0, 1.1),
+      new THREE.MeshBasicMaterial({ map: regTex })
+    );
+    plate.position.set(side * 0.26, 1.9, -4.4);
+    plate.rotation.y = side > 0 ? Math.PI / 2 : -Math.PI / 2;
+    plane.add(plate);
+  }
+  const rudderStripe = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 3.2), orange);
+  rudderStripe.position.set(0, 3.4, -4.4);
+  plane.add(rudderStripe);
+
+  // Flap track fairings under the wing roots.
+  for (const side of [-1, 1]) {
+    const fair = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.8, 8), orange);
+    fair.rotation.x = -Math.PI / 2;
+    fair.position.set(side * 3.4, 0.05, -1.6);
+    plane.add(fair);
+  }
+
   // Propeller: spinner + two blades, spun every frame.
   const prop = new THREE.Group();
   prop.position.z = 7.0;
   const spinner = new THREE.Mesh(new THREE.ConeGeometry(0.85, 1.8, 12), dark);
   spinner.rotation.x = Math.PI / 2;
   prop.add(spinner);
+  const bladeMat = dark.clone();
+  bladeMat.transparent = true;
   const bladeGeo = new THREE.BoxGeometry(0.5, 6.4, 0.18);
-  const blade1 = new THREE.Mesh(bladeGeo, dark);
+  const blade1 = new THREE.Mesh(bladeGeo, bladeMat);
   prop.add(blade1);
-  const blade2 = new THREE.Mesh(bladeGeo, dark);
+  const blade2 = new THREE.Mesh(bladeGeo, bladeMat);
   blade2.rotation.z = Math.PI / 2;
   prop.add(blade2);
   plane.add(prop);
   plane.userData.prop = prop;
+  plane.userData.bladeMat = bladeMat;
+
+  // Prop blur disc: at cruise RPM the blades smear into a translucent
+  // disc with a faint ring — a spinning prop, not a frozen cross.
+  const discCv = document.createElement('canvas');
+  discCv.width = 256; discCv.height = 256;
+  const dg = discCv.getContext('2d');
+  const dgrad = dg.createRadialGradient(128, 128, 20, 128, 128, 128);
+  dgrad.addColorStop(0, 'rgba(40,45,50,0)');
+  dgrad.addColorStop(0.55, 'rgba(40,45,50,0.10)');
+  dgrad.addColorStop(0.85, 'rgba(40,45,50,0.28)');
+  dgrad.addColorStop(0.97, 'rgba(40,45,50,0.42)');
+  dgrad.addColorStop(1, 'rgba(40,45,50,0)');
+  dg.fillStyle = dgrad;
+  dg.fillRect(0, 0, 256, 256);
+  const discTex = new THREE.CanvasTexture(discCv);
+  const propDisc = new THREE.Mesh(
+    new THREE.CircleGeometry(3.4, 32),
+    new THREE.MeshBasicMaterial({ map: discTex, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide })
+  );
+  propDisc.position.z = 7.05;
+  plane.add(propDisc);
+  plane.userData.propDisc = propDisc;
 
   // Nav lights: red left, green right, white tail.
   const navMat = (c) => new THREE.MeshBasicMaterial({ color: c });
@@ -628,6 +933,17 @@ function buildPlane() {
   plane.add(navT);
   plane.userData.navL = navL;
   plane.userData.navR = navR;
+
+  // Wingtip strobes: bright white flashes, alternating with the navs.
+  const strobeMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const strobeL = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), strobeMat);
+  strobeL.position.set(-12.9, 0.7, 0.6);
+  plane.add(strobeL);
+  const strobeR = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), strobeMat.clone());
+  strobeR.position.set(12.9, 0.7, 0.6);
+  plane.add(strobeR);
+  plane.userData.strobeL = strobeL;
+  plane.userData.strobeR = strobeR;
 
   // Fixed gear: two struts + wheels with fairings.
   for (const side of [-1, 1]) {
@@ -681,13 +997,31 @@ function draw(S) {
   plane.rotation.x = -S.pitch * 0.9;
   plane.rotation.z = -S.bank * 0.9;
 
-  // Propeller spin + nav-light blink.
+  // Propeller spin + nav-light blink. At cruise RPM the blades fade
+  // into the blur disc; at idle the disc vanishes and the blades read.
   plane.userData.prop.rotation.z += dt * (6 + S.throttle * 46 + S.speed * 0.12);
+  const rpm = Math.min(1, (S.throttle * 0.7 + S.speed / 260) * 1.15);
+  plane.userData.propDisc.material.opacity = rpm * 0.85;
+  plane.userData.bladeMat.opacity = 1 - rpm * 0.75;
   const blink = Math.sin(S.time * 6) > 0;
   plane.userData.navL.visible = blink;
   plane.userData.navR.visible = blink;
+  // Strobes flash on the opposite beat of the nav lights.
+  plane.userData.strobeL.visible = !blink && Math.sin(S.time * 6 + 1.2) > 0.55;
+  plane.userData.strobeR.visible = !blink && Math.sin(S.time * 6 + 1.2) > 0.55;
 
   updateRings(S);
+
+  // Sea: scroll the wave normal map and breathe the foam rings.
+  if (seaNormalTex) {
+    seaNormalTex.offset.x = (S.time * 0.008) % 1;
+    seaNormalTex.offset.y = (S.time * 0.005) % 1;
+  }
+  for (const f of foamRings) {
+    const s = 1 + Math.sin(S.time * 0.9 + f.phase) * 0.02;
+    f.mesh.scale.setScalar(s);
+  }
+  if (foamMat) foamMat.opacity = 0.30 + Math.sin(S.time * 0.9) * 0.07;
 
   // Clouds drift slowly downwind.
   for (const g of cloudPuffs) {

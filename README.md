@@ -25,12 +25,16 @@ in the sea, run dry, or let the timer hit zero and the sortie is over.
 
 ## What is in the frame
 
-- Chase view over recognisable terrain: sea, sand-ringed islands with
-  procedurally textured grass, sand and highland, layered-frond palms,
-  and the Coral Bay runway island
-- The aircraft in frame: a detailed bush plane with framed canopy, livery
-  band, wing struts, wheel fairings, nav lights and a spinning prop,
-  filmed from a slightly off-centre chase angle
+- Chase view over recognisable terrain: a sun-glitter sea with foam-ringed
+  shorelines, sand-ringed islands with slope-coloured rock faces, dirt
+  clearings and procedurally textured grass, layered-frond palms, and the
+  Coral Bay runway island
+- The aircraft in frame: a detailed bush plane with painted panel-line
+  skin and registration, a pilot under the framed canopy, livery band,
+  wing struts, wheel fairings, nav lights, wingtip strobes and a prop
+  blur disc at cruise RPM, filmed from a slightly off-centre chase angle
+- Soft dissolving clouds with high cirrus streaks under a hazy
+  golden-hour sky with a glowing sun
 - Lit instruments: altimeter, airspeed and throttle dials, artificial
   horizon, compass tape — plus altitude, speed and heading on the HUD
 - A target ring (or the runway) ahead at all times
@@ -39,7 +43,7 @@ in the sea, run dry, or let the timer hit zero and the sortie is over.
 
 - `game/index.html` — the page; `game/src/` — one job per file:
   `main.js` (flight model + states), `world.js` (seeded archipelago,
-  rings, runway), `render.js` (chase view, plane, HUD, instruments),
+  rings, runway), `render3d.js` (chase view, plane, sea, terrain, clouds),
   `input.js` (keyboard + mouse), `audio.js` (synthesised WebAudio sounds),
   `shots.js` (deterministic `?shot=N` poses for the screenshots)
 - `screenshots/` — 4 real renders of the game's own code

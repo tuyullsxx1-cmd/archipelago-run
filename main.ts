@@ -18,6 +18,15 @@
 // the nose and prop read in frame. Gameplay, controls and HUD are
 // unchanged from v2.
 //
+// v4 rebuild (user: "Rebuild tutupin sisa gap nya"): closes the four
+// gaps the parent verified in the v3 screenshots — the plane wears a
+// painted panel-line skin with registration, a pilot in the canopy and a
+// prop blur disc; the terrain colours by slope with rock faces, dirt
+// clearing by the strip and micro-relief; the sea carries scrolling wave
+// normals, sun glint and foam rings at every shoreline; the clouds are
+// soft dissolving billboards with cirrus streaks, under a hazier sky.
+// Gameplay, controls and HUD are unchanged from v3.
+//
 // Outside the grader, MAKEFUN_OUTPUT_DIR stands in for /output.
 // Node 22, standard library only; deterministic: the same repository
 // always writes the same bytes.
@@ -75,7 +84,7 @@ async function handIn(): Promise<void> {
 
   const dossierText = await readFile(join(out, 'dossier.json'), 'utf8');
   const shotCount = (await readdir(join(out, 'screenshots'))).length;
-  console.log(`archipelago-run v3: wrote ${out} (dossier.json ${dossierText.length} chars, ${shotCount} screenshots)`);
+  console.log(`archipelago-run v4: wrote ${out} (dossier.json ${dossierText.length} chars, ${shotCount} screenshots)`);
 }
 
 await handIn();
