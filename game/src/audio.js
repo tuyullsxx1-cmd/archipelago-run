@@ -66,6 +66,32 @@ const AudioKit = (() => {
     setTimeout(() => blip(1318, 0.4, 'sine', 0.4), 90);
   }
 
+  /** v6 ring-pass stinger: a bright rising arpeggio over a quick
+   *  whoosh sweep, so a clean pass sounds like a payoff, not a beep. */
+  function sweep() {
+    try {
+      if (!ctx || !master) return;
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'triangle';
+      o.frequency.setValueAtTime(320, ctx.currentTime);
+      o.frequency.exponentialRampToValueAtTime(980, ctx.currentTime + 0.22);
+      g.gain.setValueAtTime(0.28, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.28);
+      o.connect(g);
+      g.connect(master);
+      o.start();
+      o.stop(ctx.currentTime + 0.3);
+    } catch (_e) { /* silent */ }
+  }
+
+  function stinger() {
+    sweep();
+    blip(660, 0.22, 'sine', 0.5);
+    setTimeout(() => blip(880, 0.22, 'sine', 0.5), 70);
+    setTimeout(() => blip(1318, 0.35, 'sine', 0.45), 140);
+  }
+
   function fanfare() {
     [523, 659, 784, 1046].forEach((f, i) => {
       setTimeout(() => blip(f, 0.5, 'triangle', 0.5), i * 130);
@@ -93,5 +119,5 @@ const AudioKit = (() => {
     blip(220, 0.25, 'square', 0.25);
   }
 
-  return { ensure, setEngine, chime, fanfare, thud, warn };
+  return { ensure, setEngine, chime, stinger, fanfare, thud, warn };
 })();

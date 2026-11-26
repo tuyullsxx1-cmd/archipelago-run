@@ -29,7 +29,7 @@ renderer.toneMappingExposure = 1.12;
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(0xe8a86a, 950, 6200);
 
-const camera = new THREE.PerspectiveCamera(62, 1280 / 720, 0.5, 22000);
+const camera = new THREE.PerspectiveCamera(64, 1280 / 720, 0.5, 22000);
 camera.position.set(0, 275, -60);
 
 // Golden-hour sun, low behind and to the left of the course, so the
@@ -658,6 +658,116 @@ function updateRings(S) {
   });
 }
 
+// ------------------------------------------------------- v6 ring bursts
+
+// A ring-pass burst: ~90 gold sparks that bloom out of the ring and
+// fade in under a second, plus a flash sprite at the ring's heart.
+// main.js arms it by setting S.shotBurst (or S.burstTick); draw()
+// consumes the flag so a frozen screenshot pose holds the bloom.
+const BURST_N = 90;
+const burstGeo = new THREE.BufferGeometry();
+const burstPos = new Float32Array(BURST_N * 3);
+const burstVel = new Float32Array(BURST_N * 3);
+burstGeo.setAttribute('position', new THREE.BufferAttribute(burstPos, 3));
+// Soft round spark texture: bare points render as hard squares, which
+// read as static, not sparks.
+const sparkCv = document.createElement('canvas');
+sparkCv.width = 64; sparkCv.height = 64;
+{
+  const sg = sparkCv.getContext('2d');
+  const grad = sg.createRadialGradient(32, 32, 1, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.35, 'rgba(255,220,140,0.9)');
+  grad.addColorStop(1, 'rgba(255,180,80,0)');
+  sg.fillStyle = grad;
+  sg.fillRect(0, 0, 64, 64);
+}
+const sparkTex = new THREE.CanvasTexture(sparkCv);
+const burstMat = new THREE.PointsMaterial({
+  color: 0xffd27a, size: 9, transparent: true, opacity: 0, map: sparkTex,
+  blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
+});
+const burstPoints = new THREE.Points(burstGeo, burstMat);
+burstPoints.frustumCulled = false;
+scene.add(burstPoints);
+let burstLife = 0;
+let burstTick = -1;
+
+// Flash sprite at the burst centre: a radial glow that pops and fades.
+const flashCv = document.createElement('canvas');
+flashCv.width = 128; flashCv.height = 128;
+{
+  const fg = flashCv.getContext('2d');
+  const grad = fg.createRadialGradient(64, 64, 2, 64, 64, 64);
+  grad.addColorStop(0, 'rgba(255,240,190,0.95)');
+  grad.addColorStop(0.4, 'rgba(255,190,90,0.55)');
+  grad.addColorStop(1, 'rgba(255,160,60,0)');
+  fg.fillStyle = grad;
+  fg.fillRect(0, 0, 128, 128);
+}
+const flashTex = new THREE.CanvasTexture(flashCv);
+const flash = new THREE.Sprite(new THREE.SpriteMaterial({
+  map: flashTex, transparent: true, opacity: 0, depthWrite: false,
+}));
+flash.scale.set(1, 1, 1);
+scene.add(flash);
+
+/** Fire a burst at (x, y, z): sparks outward, flash at the centre. */
+function spawnRingBurst(x, y, z) {
+  for (let i = 0; i < BURST_N; i++) {
+    burstPos[i * 3] = x;
+    burstPos[i * 3 + 1] = y;
+    burstPos[i * 3 + 2] = z;
+    const a = Math.random() * Math.PI * 2;
+    const b = (Math.random() - 0.5) * Math.PI;
+    const sp = 60 + Math.random() * 160;
+    burstVel[i * 3] = Math.cos(a) * Math.cos(b) * sp;
+    burstVel[i * 3 + 1] = Math.sin(b) * sp;
+    burstVel[i * 3 + 2] = Math.sin(a) * Math.cos(b) * sp;
+  }
+  burstGeo.attributes.position.needsUpdate = true;
+  burstLife = 0.9;
+  flash.position.set(x, y, z);
+  flash.scale.set(60, 60, 1);
+}
+
+/** Advance the burst one frame; frozen when the shot pose holds it. */
+function updateRingBurst(dt, frozen) {
+  if (burstLife <= 0) {
+    burstMat.opacity = 0;
+    flash.material.opacity = 0;
+    return;
+  }
+  if (!frozen) burstLife -= dt;
+  const k = Math.max(0, burstLife / 0.9);
+  for (let i = 0; i < BURST_N; i++) {
+    burstPos[i * 3] += burstVel[i * 3] * dt;
+    burstPos[i * 3 + 1] += burstVel[i * 3 + 1] * dt;
+    burstPos[i * 3 + 2] += burstVel[i * 3 + 2] * dt;
+    burstVel[i * 3 + 1] -= 30 * dt; // sparks arc down gently
+  }
+  burstGeo.attributes.position.needsUpdate = true;
+  burstMat.opacity = k;
+  flash.material.opacity = k * 0.9;
+  const s = 60 + (1 - k) * 260;
+  flash.scale.set(s, s, 1);
+}
+
+// ------------------------------------------------------- v6 projection
+
+const _projV = new THREE.Vector3();
+
+/** Project a world point to HUD pixels (1280×720). Used by the HUD's
+ *  next-ring beacon. behind is true when the point is behind the camera. */
+function projectWorldToScreen(x, y, z) {
+  _projV.set(x, y, z).project(camera);
+  return {
+    x: (_projV.x * 0.5 + 0.5) * 1280,
+    y: (-_projV.y * 0.5 + 0.5) * 720,
+    behind: _projV.z > 1,
+  };
+}
+
 // --------------------------------------------------------------- aircraft
 
 /** Painted skin for the fuselage: panel seams, rivet rows, a cheatline
@@ -1035,6 +1145,15 @@ function draw(S) {
 
   updateRings(S);
 
+  // v6 ring burst: main.js arms S.shotBurst on a pass (and the burst
+  // pose carries one); draw() fires it once and holds the bloom while
+  // the screenshot pose is frozen.
+  if (S.shotBurst) {
+    spawnRingBurst(S.shotBurst.x, S.shotBurst.y, S.shotBurst.z);
+    S.shotBurst = null;
+  }
+  updateRingBurst(dt, !!S.shot);
+
   // Sea: scroll the wave normal map and breathe the foam rings.
   if (seaNormalTex) {
     seaNormalTex.offset.x = (S.time * 0.008) % 1;
@@ -1060,24 +1179,34 @@ function draw(S) {
   // Chase camera: behind and above, smoothed, rolled with the bank.
   // Slightly off-centre — the camera sits a touch to starboard and looks
   // a touch to port, so the nose and spinning prop read in frame.
+  // v6: closer in (the plane fills more of the frame) and a stronger
+  // speed FOV kick, so velocity reads at a glance.
   fwd.set(Math.sin(S.heading), 0, Math.cos(S.heading));
   const right = new THREE.Vector3(fwd.z, 0, -fwd.x);
-  camTarget.copy(plane.position).addScaledVector(fwd, -40).addScaledVector(right, 8).add(new THREE.Vector3(0, 13, 0));
-  if (S.shot) {
-    // Screenshot pose: snap straight to the composed frame instead of
-    // lerping in from the spawn point over several seconds.
+  camTarget.copy(plane.position).addScaledVector(fwd, -30).addScaledVector(right, 7).add(new THREE.Vector3(0, 10.5, 0));
+  if (S.shot || S.snapCam) {
+    // Screenshot pose, or a fresh start: snap straight to the composed
+    // frame instead of lerping in from the spawn point over several
+    // seconds. The flag clears after one snap.
     camPos.copy(camTarget);
+    S.snapCam = false;
   } else {
     const k = 1 - Math.exp(-dt * 4.5);
     camPos.lerp(camTarget, k);
   }
   camera.position.copy(camPos);
+  // v6 camera kick: a subtle shake on ring passes, decaying fast.
+  if (S.shake > 0 && !S.shot) {
+    const sh = S.shake * S.shake * 2.2;
+    camera.position.x += (Math.random() - 0.5) * sh;
+    camera.position.y += (Math.random() - 0.5) * sh;
+  }
   camLook.copy(plane.position).addScaledVector(fwd, 90).addScaledVector(right, -5).add(new THREE.Vector3(0, 1, 0));
   up.set(Math.sin(S.bank * 0.28), Math.cos(S.bank * 0.28), 0);
   camera.up.copy(up);
   camera.lookAt(camLook);
   camera.updateProjectionMatrix();
-  const wantFov = 62 + Math.max(0, S.speed - 120) * 0.05;
+  const wantFov = 64 + Math.max(0, S.speed - 120) * 0.07;
   if (Math.abs(camera.fov - wantFov) > 0.05) {
     camera.fov += (wantFov - camera.fov) * 0.1;
     camera.updateProjectionMatrix();
@@ -1086,4 +1215,4 @@ function draw(S) {
   renderer.render(scene, camera);
 }
 
-window.Render3D = { draw };
+window.Render3D = { draw, project: projectWorldToScreen };

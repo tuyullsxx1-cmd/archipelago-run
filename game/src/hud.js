@@ -185,7 +185,8 @@ const Hud = (() => {
     ctx.fillText('TIME', W - 180, 42);
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 22px system-ui, sans-serif';
-    ctx.fillText(String(S.score), W - 18, 22);
+    // v6: the score accumulates fractions in flight; the readout is whole.
+    ctx.fillText(String(Math.round(S.score)), W - 18, 22);
     const t = Math.max(0, Math.ceil(S.timeLeft));
     ctx.fillText(Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'), W - 18, 44);
     ctx.restore();
@@ -213,6 +214,121 @@ const Hud = (() => {
     ctx.fillStyle = '#fff3d6';
     ctx.font = 'bold 12px system-ui, sans-serif';
     ctx.fillText('FUEL', 216, 104);
+    // v6 combo badge: the chain is the score engine, so it reads loud.
+    if (S.combo >= 2) {
+      ctx.save();
+      ctx.font = 'bold 20px system-ui, sans-serif';
+      ctx.fillStyle = '#ffb84d';
+      ctx.shadowColor = '#000';
+      ctx.shadowBlur = 6;
+      ctx.fillText('COMBO ×' + S.combo + '  +' + ((S.combo - 1) * 50) + ' BONUS', 18, 132);
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  // v6 next-ring beacon: project the next ring to the screen and point
+  // at it, so the pilot always knows where to go next. Off-screen, the
+  // arrow hugs the screen edge with the distance in metres.
+  function drawRingBeacon(S) {
+    if (S.state !== 'flying' || S.nextRing >= World.rings.length) return;
+    if (!window.Render3D || !window.Render3D.project) return;
+    const ring = World.rings[S.nextRing];
+    const p = window.Render3D.project(ring.x, ring.y, ring.z);
+    const distM = Math.max(0, Math.round((ring.z - S.z) * 10));
+    ctx.save();
+    ctx.textAlign = 'center';
+    if (p.behind || p.x < 40 || p.x > W - 40 || p.y < 70 || p.y > H - 60) {
+      // Off-screen: clamp to the edge and draw a pointing chevron.
+      const cx = Math.max(50, Math.min(W - 50, p.x));
+      const cy = Math.max(80, Math.min(H - 70, p.y));
+      const ang = Math.atan2(p.y - cy, p.x - cx);
+      ctx.translate(cx, cy);
+      ctx.rotate(ang);
+      ctx.fillStyle = '#ff8c1a';
+      ctx.shadowColor = '#ff8c1a';
+      ctx.shadowBlur = 14;
+      ctx.beginPath();
+      ctx.moveTo(18, 0);
+      ctx.lineTo(-10, -13);
+      ctx.lineTo(-4, 0);
+      ctx.lineTo(-10, 13);
+      ctx.closePath();
+      ctx.fill();
+      ctx.rotate(-ang);
+      ctx.fillStyle = '#fff3d6';
+      ctx.font = 'bold 16px system-ui, sans-serif';
+      ctx.shadowColor = '#000';
+      ctx.shadowBlur = 6;
+      ctx.fillText('RING ' + (S.nextRing + 1) + '  •  ' + distM + ' M', 0, 42);
+    } else {
+      // On-screen: a pulsing diamond over the ring + its distance.
+      const pulse = 1 + Math.sin(S.time * 5) * 0.15;
+      ctx.translate(p.x, p.y);
+      ctx.scale(pulse, pulse);
+      ctx.strokeStyle = '#ff8c1a';
+      ctx.lineWidth = 3;
+      ctx.shadowColor = '#ff8c1a';
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.moveTo(0, -22);
+      ctx.lineTo(16, 0);
+      ctx.lineTo(0, 22);
+      ctx.lineTo(-16, 0);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.fillStyle = '#ff8c1a';
+      ctx.beginPath();
+      ctx.arc(0, 0, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.scale(1 / pulse, 1 / pulse);
+      ctx.fillStyle = '#fff3d6';
+      ctx.font = 'bold 16px system-ui, sans-serif';
+      ctx.shadowColor = '#000';
+      ctx.shadowBlur = 6;
+      ctx.fillText('RING ' + (S.nextRing + 1) + '  •  ' + distM + ' M', 0, -34);
+    }
+    ctx.restore();
+  }
+
+  // v6 score popup: the points just earned rise and fade above centre.
+  function drawScorePopup(S) {
+    if (!S.popup || S.popupT <= 0) return;
+    const t = S.popupT / 1.2;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, t * 1.6);
+    ctx.font = 'bold 40px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#7ee787';
+    ctx.shadowColor = '#000';
+    ctx.shadowBlur = 10;
+    ctx.fillText(S.popup, CX, 230 - (1 - t) * 46);
+    ctx.restore();
+  }
+
+  // v6 speed streaks: at high speed, faint streaks race in from the
+  // screen edges so velocity reads even in a still frame.
+  function drawSpeedStreaks(S) {
+    if (S.state !== 'flying' || S.speed < 165) return;
+    const k = Math.min(1, (S.speed - 165) / 60);
+    ctx.save();
+    ctx.globalAlpha = 0.28 * k;
+    ctx.strokeStyle = '#eaf6ff';
+    ctx.lineWidth = 2;
+    const n = 14;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + S.time * 0.15;
+      const r0 = 480 + ((i * 137) % 120);
+      const r1 = r0 + 60 + k * 90;
+      const x0 = CX + Math.cos(a) * r0;
+      const y0 = 360 + Math.sin(a) * r0 * 0.62;
+      const x1 = CX + Math.cos(a) * r1;
+      const y1 = 360 + Math.sin(a) * r1 * 0.62;
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x1, y1);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -298,8 +414,11 @@ const Hud = (() => {
   /** Draw the whole overlay for flight state S. */
   function draw(S) {
     ctx.clearRect(0, 0, W, H);
+    drawSpeedStreaks(S);
     topBar(S);
     ringsAndFuel(S);
+    drawRingBeacon(S);
+    drawScorePopup(S);
     centreNotices(S);
     instruments(S);
     if (S.state === 'title') titleCard(S);
@@ -317,22 +436,22 @@ const Hud = (() => {
     } else if (S.state === 'crashed') {
       endCard(S, 'DITCHED!', [
         S.crashReason,
-        'Score ' + S.score + '  •  Rings ' + S.nextRing + '/' + World.rings.length + '  •  Best ' + S.best,
+        'Score ' + Math.round(S.score) + '  •  Rings ' + S.nextRing + '/' + World.rings.length + '  •  Best ' + S.best,
       ], '#ff6b6b');
     } else if (S.state === 'fuelout') {
       endCard(S, 'OUT OF FUEL', [
         'You ran dry over open water. Rings refuel you — fly through them.',
-        'Score ' + S.score + '  •  Rings ' + S.nextRing + '/' + World.rings.length + '  •  Best ' + S.best,
+        'Score ' + Math.round(S.score) + '  •  Rings ' + S.nextRing + '/' + World.rings.length + '  •  Best ' + S.best,
       ], '#ffb84d');
     } else if (S.state === 'timeout') {
       endCard(S, 'TIME UP', [
         'The sun set on Coral Bay before you landed.',
-        'Score ' + S.score + '  •  Rings ' + S.nextRing + '/' + World.rings.length + '  •  Best ' + S.best,
+        'Score ' + Math.round(S.score) + '  •  Rings ' + S.nextRing + '/' + World.rings.length + '  •  Best ' + S.best,
       ], '#ffb84d');
     } else if (S.state === 'landed') {
       endCard(S, 'TOUCHDOWN!', [
         'You landed on Coral Bay runway. The archipelago is yours.',
-        'Score ' + S.score + '  •  Rings ' + S.nextRing + '/' + World.rings.length + '  •  Best ' + S.best,
+        'Score ' + Math.round(S.score) + '  •  Rings ' + S.nextRing + '/' + World.rings.length + '  •  Best ' + S.best,
       ], '#7ee787');
     }
   }

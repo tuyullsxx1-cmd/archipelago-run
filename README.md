@@ -23,6 +23,18 @@ Rings score points and refuel you (+14 fuel each). Land on the runway with
 all 8 rings flown for the full +1000 touchdown bonus. Clip an island, ditch
 in the sea, run dry, or let the timer hit zero and the sortie is over.
 
+## What's new in v6
+
+Round 1 judged v5 at rank 2027/6,258 (~55.6% win rate), so v6 is a
+game-feel pass aimed at the first seconds: the game starts airborne at
+195 kt with ring 1 dead ahead and the objective on screen; every ring
+pass pays off with a gold particle burst, a floating score popup, a
+combo chain (+50 per chained ring) and a camera kick; near misses pay
++50 instead of nothing; the HUD points at the next ring with a beacon
+(arrow + distance) and shows speed streaks at high speed; the chase
+camera sits closer and the FOV kicks harder with speed. The v3/v4
+realism and the working systems are unchanged.
+
 ## What is in the frame
 
 - Chase view over recognisable terrain: a sun-glitter sea with foam-ringed
@@ -42,9 +54,11 @@ in the sea, run dry, or let the timer hit zero and the sortie is over.
 ## Layout
 
 - `game/index.html` — the page; `game/src/` — one job per file:
-  `main.js` (flight model + states), `world.js` (seeded archipelago,
-  rings, runway), `render3d.js` (chase view, plane, sea, terrain, clouds),
-  `input.js` (keyboard + mouse), `audio.js` (synthesised WebAudio sounds),
+  `main.js` (flight model + states + combo/score popups), `world.js`
+  (seeded archipelago, rings, runway), `render3d.js` (chase view, plane,
+  sea, terrain, clouds, ring bursts, screen projection), `hud.js` (lit
+  instruments, ring beacon, speed streaks), `input.js` (keyboard +
+  mouse), `audio.js` (synthesised WebAudio sounds, ring stinger),
   `shots.js` (deterministic `?shot=N` poses for the screenshots)
 - `screenshots/` — 4 real renders of the game's own code
 - `main.ts` — the hand-in program: copies `game/` + `screenshots/` to

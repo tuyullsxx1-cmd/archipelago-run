@@ -7,7 +7,7 @@ const Game = (() => {
   // The 3D world is WebGL (window.Render3D, a module) and the instruments
   // are a 2D overlay (window.Hud); both are drawn every frame below.
   const START = {
-    x: 0, z: 0, alt: 230, speed: 0, throttle: 0.55,
+    x: 0, z: 0, alt: 230, speed: 150, throttle: 0.75,
     pitch: 0, bank: 0, heading: 0, fuel: 100, score: 0,
     rings: 0, timeLeft: 240, msg: '', msgT: 0,
   };
@@ -19,6 +19,8 @@ const Game = (() => {
     pitch: 0, bank: 0, heading: 0, fuel: 100, score: 0,
     nextRing: 0, timeLeft: 240, msg: '', msgT: 0,
     crashReason: '', best: 0, shot: false,
+    // v6 game-feel state: combo chain, score popup, camera shake.
+    combo: 0, popup: '', popupT: 0, shake: 0,
   };
 
   try {
@@ -33,12 +35,17 @@ const Game = (() => {
   }
 
   function reset() {
-    Object.assign(S, START, { state: 'flying', nextRing: 0, crashReason: '' });
-    S.speed = 90;
+    Object.assign(S, START, { state: 'flying', nextRing: 0, crashReason: '', combo: 0, popup: '', popupT: 0, shake: 0 });
+    S.speed = 150;
   }
 
   function start() {
     reset();
+    // v6 instant hook: the objective is on screen from frame one, and
+    // the chase camera snaps to the plane — no cross-ocean swoop while
+    // the title drift's camera lerps back.
+    S.snapCam = true;
+    showMsg('RING 1 AHEAD — FLY THROUGH IT!', 3.5);
     AudioKit.ensure();
     AudioKit.setEngine(S.throttle, true);
   }
@@ -60,20 +67,29 @@ const Game = (() => {
   // ------------------------------------------------------------ poses
 
   /** Deterministic poses used by shots.js (?shot=N) for screenshots. */
-  function poseTitle() {
+  // v6 shot 1 is the instant hook, not the menu: airborne at full chat,
+  // ring 1 dead ahead, objective banner on screen.
+  function poseAction() {
+    const ring = World.rings[0];
     Object.assign(S, {
-      state: 'title', shot: true, x: 0, z: 500, alt: 260, speed: 130,
-      throttle: 0.6, pitch: 0.06, bank: 0.08, heading: 0, fuel: 100,
-      score: 0, nextRing: 0, timeLeft: 240, msg: '', msgT: 0,
+      state: 'flying', shot: true, x: ring.x - 30, z: ring.z - 330,
+      alt: ring.y + 30, speed: 195, throttle: 0.9, pitch: 0.02, bank: 0.06,
+      heading: Math.atan2(30, 330), fuel: 96, score: 0, nextRing: 0,
+      timeLeft: 235, msg: 'FLY THROUGH THE GLOWING RINGS!', msgT: 99,
+      combo: 0, popup: '', popupT: 0, shake: 0,
     });
   }
-  function poseRing() {
+  // v6 shot 2 is the payoff frame: a ring just burst, combo ×3, the
+  // score popup still rising, particles frozen mid-bloom.
+  function poseBurst() {
     const ring = World.rings[2];
     Object.assign(S, {
       state: 'flying', shot: true, x: ring.x - 40, z: ring.z - 420,
-      alt: ring.y + 40, speed: 175, throttle: 0.8, pitch: 0.02, bank: 0.06,
-      heading: Math.atan2(40, 420), fuel: 82, score: 520, nextRing: 2,
-      timeLeft: 187, msg: '', msgT: 0,
+      alt: ring.y + 40, speed: 185, throttle: 0.85, pitch: 0.02, bank: 0.06,
+      heading: Math.atan2(40, 420), fuel: 88, score: 795, nextRing: 3,
+      timeLeft: 187, msg: 'RING 3/8  +275', msgT: 99,
+      combo: 3, popup: '+275', popupT: 0.9, shake: 0,
+      shotBurst: { x: ring.x, y: ring.y, z: ring.z },
     });
   }
   function poseApproach() {
@@ -137,19 +153,38 @@ const Game = (() => {
     S.timeLeft -= dt;
     AudioKit.setEngine(S.throttle, true);
 
-    // Rings.
+    // Rings. A clean pass pays the base prize plus a combo bonus; a
+    // near miss still pays a little, so a close call is a thrill, not
+    // just a failure. Every pass fires the burst, the popup and the
+    // camera kick in render3d + hud.
     if (S.nextRing < World.rings.length) {
       const ring = World.rings[S.nextRing];
       if (prevZ < ring.z && S.z >= ring.z) {
         const dx = S.x - ring.x;
         const dy = S.alt - ring.y;
-        if (Math.hypot(dx, dy) < ring.r) {
-          S.score += 250 + Math.round(S.speed / 10);
+        const d = Math.hypot(dx, dy);
+        if (d < ring.r) {
+          S.combo += 1;
+          const pts = 250 + Math.round(S.speed / 10) + (S.combo - 1) * 50;
+          S.score += pts;
           S.fuel = Math.min(100, S.fuel + 14);
           S.nextRing += 1;
-          showMsg(`RING ${S.nextRing}/8  +${250 + Math.round(S.speed / 10)}`);
-          AudioKit.chime();
+          S.popup = '+' + pts;
+          S.popupT = 1.2;
+          S.shake = 0.5;
+          S.shotBurst = { x: ring.x, y: ring.y, z: ring.z };
+          showMsg(`RING ${S.nextRing}/8  +${pts}` + (S.combo > 1 ? `  COMBO ×${S.combo}` : ''));
+          AudioKit.stinger();
+        } else if (d < ring.r * 1.6) {
+          S.combo = 0;
+          S.score += 50;
+          S.nextRing += 1;
+          S.popup = '+50 NEAR MISS';
+          S.popupT = 1.0;
+          showMsg(`NEAR MISS  +50`);
+          AudioKit.warn();
         } else {
+          S.combo = 0;
           S.nextRing += 1;
           showMsg(`MISSED RING ${S.nextRing}/8`);
           AudioKit.warn();
@@ -196,6 +231,8 @@ const Game = (() => {
   function update(dt) {
     S.time += dt;
     if (S.msgT > 0) S.msgT -= dt;
+    if (S.popupT > 0) S.popupT -= dt;
+    if (S.shake > 0) S.shake = Math.max(0, S.shake - dt * 1.4);
     if (S.shot) return; // screenshot pose: frozen frame, live animation only
     if (S.state === 'title') {
       // Gentle autopilot drift behind the title card.
@@ -213,19 +250,18 @@ const Game = (() => {
   // ------------------------------------------------------------ loop
 
   let last = 0;
-  let prevMouseDown = false;
 
   function frame(now) {
     const dt = Math.min(0.05, (now - last) / 1000 || 0.016);
     last = now;
 
-    const mouseClicked = Input.mouse.down && !prevMouseDown;
-    prevMouseDown = Input.mouse.down;
+    const mouseClicked = Input.takeClick();
 
     if (S.state === 'title' && (Input.consume('Enter') || mouseClicked)) start();
     else if ((S.state === 'crashed' || S.state === 'fuelout' || S.state === 'timeout' || S.state === 'landed') && Input.consume('KeyR')) start();
     else if (S.state === 'flying' && Input.consume('KeyP')) S.state = 'paused';
     else if (S.state === 'paused' && (Input.consume('KeyP') || Input.consume('Enter'))) S.state = 'flying';
+    Input.endFrame();
 
     update(dt);
     if (window.Render3D) window.Render3D.draw(S);
@@ -236,5 +272,5 @@ const Game = (() => {
   Input.attach();
   requestAnimationFrame(frame);
 
-  return { S, start, poseTitle, poseRing, poseApproach, poseLanded };
+  return { S, start, poseAction, poseBurst, poseApproach, poseLanded };
 })();

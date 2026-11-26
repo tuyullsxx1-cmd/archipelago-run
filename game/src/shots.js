@@ -1,7 +1,9 @@
 // shots.js — deterministic screenshot poses for Archipelago Run.
 // Open game/index.html?shot=N and the game freezes in a composed frame:
-//   1 — title card over the islands
-//   2 — mid-flight, next ring dead ahead, HUD live
+//   1 — v6 instant hook: airborne at 195 kt, ring 1 dead ahead, the
+//       objective banner on screen (the cover — action, not the menu)
+//   2 — v6 payoff: ring 3 just burst, combo ×3, score popup rising,
+//       gold sparks frozen mid-bloom
 //   3 — final approach to Coral Bay runway
 //   4 — touchdown on the runway, mission complete
 // Used only to take the entry's screenshots; the game itself never reads it.
@@ -17,8 +19,8 @@
       return;
     }
     const poses = {
-      1: Game.poseTitle,
-      2: Game.poseRing,
+      1: Game.poseAction,
+      2: Game.poseBurst,
       3: Game.poseApproach,
       4: Game.poseLanded,
     };
