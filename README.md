@@ -8,6 +8,10 @@ A complete golden-hour flight game: fly a bush plane over a tropical
 archipelago, thread all 8 glowing target rings, watch your fuel, and land
 on the Coral Bay runway before the timer runs out.
 
+## What's new in v7
+
+Coral Bay is a real airport now: a terminal with a lit glass front and a CORAL BAY sign, a control tower with a blinking beacon, two arched hangars, parked planes on the apron, a taxiway, a fuel truck and drums, a windsock, runway numbers (36/18), PAPI lights and a perimeter road with cars. All real 3D geometry — the strip, the landing zone and the touchdown rule are unchanged, and so is the v6 feel (195 kt start, combo, burst, beacon).
+
 ## Play
 
 Open `game/index.html` in desktop Chrome (or serve `game/` with any static

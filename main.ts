@@ -38,6 +38,18 @@
 // with speed. The v3/v4 realism and the working systems (8 rings, fuel
 // +14/ring, timer, landing bonus, crash/ditch/dry states) are unchanged.
 //
+// v7 airport pass (user: "Tambahin kaya bandara beneran dong, di bikin
+// lebih 3d lagi"): Coral Bay is a real airport now — a terminal with a
+// lit glass front and a CORAL BAY sign, a control tower with a blinking
+// beacon, two arched hangars, parked planes on the apron, a taxiway, a
+// fuel truck, a windsock, runway numbers (36/18), PAPI lights and a
+// perimeter road with cars. All real 3D geometry with height, built in
+// render3d.js as buildAirport() in the runway's own frame. The strip,
+// the landing zone and the touchdown detection are untouched, and so is
+// the v6 feel (195 kt start, combo, burst, beacon). Screenshots 3
+// (approach) and 4 (landing) were re-shot for v7 so the judge's sheet
+// shows the airport itself, not just the bare strip it replaced.
+//
 // Outside the grader, MAKEFUN_OUTPUT_DIR stands in for /output.
 // Node 22, standard library only; deterministic: the same repository
 // always writes the same bytes.
@@ -103,7 +115,7 @@ async function handIn(): Promise<void> {
 
   const dossierText = await readFile(join(out, 'dossier.json'), 'utf8');
   const shotCount = (await readdir(join(out, 'screenshots'))).length;
-  console.log(`archipelago-run v6: wrote ${out} (dossier.json ${dossierText.length} chars, ${shotCount} screenshots)`);
+  console.log(`archipelago-run v7: wrote ${out} (dossier.json ${dossierText.length} chars, ${shotCount} screenshots)`);
 }
 
 await handIn();

@@ -92,11 +92,14 @@ const Game = (() => {
       shotBurst: { x: ring.x, y: ring.y, z: ring.z },
     });
   }
+  // v7: closer and lower (620 m out, 65 ft up) so the airport —
+  // terminal, tower and hangars — reads as a real airport in the
+  // frame instead of a speck at the far end of the strip.
   function poseApproach() {
     Object.assign(S, {
-      state: 'flying', shot: true, x: -30, z: World.runway.z - 900,
-      alt: 80, speed: 120, throttle: 0.5, pitch: -0.08, bank: 0.03,
-      heading: Math.atan2(30, 900), fuel: 46, score: 2140, nextRing: 8,
+      state: 'flying', shot: true, x: -40, z: World.runway.z - 620,
+      alt: 65, speed: 120, throttle: 0.5, pitch: -0.08, bank: 0.03,
+      heading: Math.atan2(40, 620), fuel: 46, score: 2140, nextRing: 8,
       timeLeft: 64, msg: 'FINAL — LAND ON CORAL BAY', msgT: 99,
     });
   }

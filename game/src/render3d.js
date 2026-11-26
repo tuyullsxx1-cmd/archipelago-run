@@ -616,6 +616,375 @@ function buildRunway() {
   scene.add(group);
 }
 
+// ---------------------------------------------------------------- airport (v7)
+
+let towerBeacon = null;
+let windsockPivot = null;
+
+/** Canvas texture: warm lit terminal windows on dark glass, so the
+ *  terminal's runway-facing front reads as occupied at golden hour. */
+function makeTerminalGlassTexture() {
+  const W = 512, H = 256;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#22333f';
+  g.fillRect(0, 0, W, H);
+  // Muted sky reflection band across the top.
+  const sky = g.createLinearGradient(0, 0, 0, 70);
+  sky.addColorStop(0, 'rgba(255,190,110,0.35)');
+  sky.addColorStop(1, 'rgba(255,190,110,0)');
+  g.fillStyle = sky;
+  g.fillRect(0, 0, W, 70);
+  // Window grid: most lit warm, a few dark, so the front is alive.
+  for (let r = 0; r < 4; r++) {
+    for (let c = 0; c < 12; c++) {
+      const lit = hashJitter(c * 7.3, r * 11.7) > 0.28;
+      g.fillStyle = lit
+        ? (hashJitter(c, r * 3.1) > 0.5 ? '#ffd98a' : '#ffb347')
+        : '#16222b';
+      g.fillRect(14 + c * 41, 84 + r * 42, 28, 28);
+    }
+  }
+  // Mullion lines.
+  g.strokeStyle = 'rgba(10,18,24,0.8)';
+  g.lineWidth = 3;
+  for (let c = 0; c <= 12; c++) {
+    g.beginPath(); g.moveTo(c * 41 + 6, 76); g.lineTo(c * 41 + 6, 252); g.stroke();
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/** Canvas texture: the "CORAL BAY" sign on the terminal fascia. */
+function makeAirportSignTexture() {
+  const W = 512, H = 128;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#f2e8d5';
+  g.fillRect(0, 0, W, H);
+  g.fillStyle = '#1f3a5f';
+  g.font = 'bold 62px sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText('CORAL BAY', W / 2, H / 2 + 2);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/** Canvas texture: a runway number in white paint, transparent ground. */
+function makeRunwayNumberTexture(text) {
+  const W = 256, H = 128;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const g = cv.getContext('2d');
+  g.clearRect(0, 0, W, H);
+  g.fillStyle = '#ffffff';
+  g.font = 'bold 88px sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(text, W / 2, H / 2 + 4);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/** Canvas texture: orange/white windsock stripes. */
+function makeWindsockTexture() {
+  const W = 128, H = 32;
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const g = cv.getContext('2d');
+  for (let i = 0; i < 4; i++) {
+    g.fillStyle = i % 2 === 0 ? '#ff7a1a' : '#f8f4ea';
+    g.fillRect(i * 32, 0, 32, H);
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/** A small static parked plane: fuselage, wing, tail, gear — no spin. */
+function buildParkedPlane(matWhite, matOrange, matDark) {
+  const p = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 0.8, 10, 10), matWhite);
+  body.rotation.z = Math.PI / 2;
+  body.position.y = 2.2;
+  p.add(body);
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(1.4, 2.2, 10), matOrange);
+  nose.rotation.z = -Math.PI / 2;
+  nose.position.set(-6, 2.2, 0);
+  p.add(nose);
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.35, 17), matOrange);
+  wing.position.set(0.5, 2.5, 0);
+  p.add(wing);
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.3, 7), matWhite);
+  tail.position.set(4.6, 2.4, 0);
+  p.add(tail);
+  const fin = new THREE.Mesh(new THREE.BoxGeometry(0.35, 2.6, 2.4), matOrange);
+  fin.position.set(4.6, 3.6, 0);
+  p.add(fin);
+  for (const side of [-1, 1]) {
+    const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 1.6, 6), matDark);
+    strut.position.set(0.5, 0.9, side * 1.8);
+    p.add(strut);
+    const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.65, 0.45, 10), matDark);
+    wheel.rotation.x = Math.PI / 2;
+    wheel.position.set(0.5, 0.65, side * 1.8);
+    p.add(wheel);
+  }
+  p.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  return p;
+}
+
+/** Coral Bay airport: a real airport, not a bare strip — terminal with
+ *  a lit glass front and a CORAL BAY sign, a control tower with a
+ *  blinking beacon, two arched hangars, parked planes on the apron, a
+ *  taxiway, a fuel truck, a windsock, runway numbers, PAPI lights and a
+ *  perimeter road with cars. All real 3D geometry with height, built in
+ *  the runway's own frame (origin = runway centre, y = strip height):
+ *  x east, z along the strip. The strip itself, the landing zone and
+ *  the touchdown detection are untouched. */
+function buildAirport() {
+  const group = new THREE.Group();
+  const BY = -0.3; // apron top, just above the graded island top
+  const concrete = new THREE.MeshLambertMaterial({ color: 0x8a8f96 });
+  const asphaltDark = new THREE.MeshLambertMaterial({ color: 0x3a3f45 });
+  const cream = new THREE.MeshLambertMaterial({ color: 0xf2e8d5 });
+  const creamDark = new THREE.MeshLambertMaterial({ color: 0xd9cdb4 });
+  const glassMat = new THREE.MeshPhongMaterial({ color: 0x1a3a4a, shininess: 200, specular: 0x9fd4ff });
+  const dark = new THREE.MeshLambertMaterial({ color: 0x2a3138 });
+  const white = new THREE.MeshLambertMaterial({ color: 0xf8f4ea });
+  const orange = new THREE.MeshLambertMaterial({ color: 0xe8590c });
+  const steel = new THREE.MeshLambertMaterial({ color: 0xb9c0c7 });
+
+  const addBox = (mat, w, h, d, x, y, z, parent) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    m.position.set(x, y, z);
+    m.castShadow = true;
+    m.receiveShadow = true;
+    (parent || group).add(m);
+    return m;
+  };
+
+  // Apron + taxiway: concrete beside the strip, linked to it.
+  addBox(concrete, 170, 1, 400, 140, BY - 0.5, 80);
+  addBox(concrete, 26, 1, 40, 52, BY - 0.5, 110);
+  // Taxiway centreline dashes.
+  const taxiDash = new THREE.MeshBasicMaterial({ color: 0xffd23e });
+  for (let i = 0; i < 3; i++) {
+    const d = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.3, 6), taxiDash);
+    d.position.set(52, BY + 0.2, 96 + i * 14);
+    group.add(d);
+  }
+  // Apron stand markings: white boxes where the parked planes sit.
+  const standMat = new THREE.MeshBasicMaterial({ color: 0xf5f0dc });
+  for (const z of [55, 200]) {
+    const s = new THREE.Mesh(new THREE.BoxGeometry(24, 0.3, 14), standMat);
+    s.position.set(95, BY + 0.2, z);
+    group.add(s);
+  }
+
+  // Terminal: cream block, lit glass front facing the runway (west),
+  // CORAL BAY sign on the fascia, overhang roof + second storey so the
+  // silhouette reads against the sky from the approach.
+  addBox(cream, 60, 20, 150, 150, BY + 10, 130);
+  addBox(creamDark, 66, 2, 156, 150, BY + 21, 130);
+  addBox(cream, 40, 8, 90, 155, BY + 25, 130);
+  addBox(creamDark, 44, 1.5, 94, 155, BY + 29.5, 130);
+  const glassTex = makeTerminalGlassTexture();
+  const glassFront = new THREE.Mesh(
+    new THREE.PlaneGeometry(140, 11),
+    new THREE.MeshBasicMaterial({ map: glassTex })
+  );
+  glassFront.position.set(119.4, BY + 9, 130);
+  glassFront.rotation.y = -Math.PI / 2;
+  group.add(glassFront);
+  // Sign: thin box whose -x face carries the texture — a box's -x face
+  // reads un-mirrored from the runway side.
+  const signTex = makeAirportSignTexture();
+  const signMats = [cream, new THREE.MeshBasicMaterial({ map: signTex }), cream, cream, cream, cream];
+  const sign = new THREE.Mesh(new THREE.BoxGeometry(2, 9, 50), signMats);
+  sign.position.set(119, BY + 21, 130);
+  sign.castShadow = true;
+  group.add(sign);
+
+  // Control tower: shaft + glass cab + roof + antenna + blinking beacon.
+  addBox(creamDark, 10, 38, 10, 105, BY + 19, -40);
+  const cab = new THREE.Mesh(new THREE.CylinderGeometry(7, 8, 6, 8), glassMat);
+  cab.position.set(105, BY + 41, -40);
+  cab.castShadow = true;
+  group.add(cab);
+  const cabRoof = new THREE.Mesh(new THREE.CylinderGeometry(8.5, 8.5, 1.2, 8), dark);
+  cabRoof.position.set(105, BY + 44.8, -40);
+  cabRoof.castShadow = true;
+  group.add(cabRoof);
+  const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 7, 6), dark);
+  antenna.position.set(105, BY + 48, -40);
+  group.add(antenna);
+  towerBeacon = new THREE.Mesh(
+    new THREE.SphereGeometry(1.3, 10, 8),
+    new THREE.MeshBasicMaterial({ color: 0xff2222 })
+  );
+  towerBeacon.position.set(105, BY + 52, -40);
+  group.add(towerBeacon);
+
+  // Two hangars: barrel roofs over box walls, dark open doorways
+  // facing the runway (west).
+  function buildHangar(cx, cz) {
+    addBox(creamDark, 50, 13, 70, cx, BY + 6.5, cz);
+    const roof = new THREE.Mesh(new THREE.CylinderGeometry(25, 25, 70, 16), steel);
+    roof.rotation.x = Math.PI / 2;
+    roof.position.set(cx, BY + 13, cz);
+    roof.castShadow = true;
+    group.add(roof);
+    const door = new THREE.Mesh(new THREE.BoxGeometry(1, 10, 34), dark);
+    door.position.set(cx - 25.2, BY + 5, cz);
+    group.add(door);
+  }
+  buildHangar(160, -120);
+  buildHangar(160, 265);
+
+  // Parked planes on the apron stands, noses toward the runway.
+  const parkedA = buildParkedPlane(white, orange, dark);
+  parkedA.position.set(95, BY, 55);
+  group.add(parkedA);
+  const parkedB = buildParkedPlane(white, orange, dark);
+  parkedB.position.set(95, BY, 200);
+  parkedB.rotation.y = 0.35;
+  group.add(parkedB);
+
+  // Fuel truck + drums beside the terminal.
+  const truck = new THREE.Group();
+  const truckCab = new THREE.Mesh(new THREE.BoxGeometry(3.5, 2.8, 3), white);
+  truckCab.position.set(0, 1.9, 3.2);
+  truckCab.castShadow = true;
+  truck.add(truckCab);
+  const tank = new THREE.Mesh(new THREE.CylinderGeometry(1.9, 1.9, 6.5, 12), steel);
+  tank.rotation.x = Math.PI / 2;
+  tank.position.set(0, 2.2, -1.5);
+  tank.castShadow = true;
+  truck.add(tank);
+  for (const [wx, wz] of [[-1.4, 3.2], [1.4, 3.2], [-1.4, -3.2], [1.4, -3.2]]) {
+    const w = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 0.5, 10), dark);
+    w.rotation.z = Math.PI / 2;
+    w.position.set(wx, 0.7, wz);
+    truck.add(w);
+  }
+  truck.position.set(82, BY, 150);
+  group.add(truck);
+  const drumCols = [0xe8590c, 0x2a6db0, 0x8a8f96];
+  for (let i = 0; i < 3; i++) {
+    const drum = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.1, 1.1, 2.4, 10),
+      new THREE.MeshLambertMaterial({ color: drumCols[i] })
+    );
+    drum.position.set(122 + (i % 2) * 3, BY + 1.2, 232 + Math.floor(i / 2) * 3);
+    drum.castShadow = true;
+    group.add(drum);
+  }
+
+  // Windsock on the west side of the strip: striped cone on a pole,
+  // swaying with the wind (animated in updateAirport).
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.5, 12, 8), steel);
+  pole.position.set(-70, BY + 6, -250);
+  pole.castShadow = true;
+  group.add(pole);
+  windsockPivot = new THREE.Group();
+  windsockPivot.position.set(-70, BY + 12.2, -250);
+  const sock = new THREE.Mesh(
+    new THREE.ConeGeometry(1.1, 7, 10),
+    new THREE.MeshBasicMaterial({ map: makeWindsockTexture() })
+  );
+  sock.rotation.z = -Math.PI / 2;
+  sock.position.x = 3.5;
+  windsockPivot.add(sock);
+  group.add(windsockPivot);
+
+  // Threshold lights (green) at the near end + PAPI beside the strip.
+  const thrMat = new THREE.MeshBasicMaterial({ color: 0x39d353 });
+  for (let i = 0; i < 6; i++) {
+    const l = new THREE.Mesh(new THREE.SphereGeometry(1.1, 8, 6), thrMat);
+    l.position.set(-30 + i * 12, 0.8, -372);
+    group.add(l);
+  }
+  const papiRed = new THREE.MeshBasicMaterial({ color: 0xff3333 });
+  const papiWhite = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  for (let i = 0; i < 4; i++) {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(2, 1.5, 2), i < 2 ? papiRed : papiWhite);
+    p.position.set(-62, 0.8, -300 + i * 10);
+    group.add(p);
+  }
+
+  // Runway numbers, painted on the strip: "36" at the near end (the
+  // course flies heading 000), "18" at the far end.
+  for (const [text, z] of [['36', -300], ['18', 300]]) {
+    const num = new THREE.Mesh(
+      new THREE.PlaneGeometry(26, 13),
+      new THREE.MeshBasicMaterial({ map: makeRunwayNumberTexture(text), transparent: true })
+    );
+    num.rotation.x = -Math.PI / 2;
+    num.rotation.z = Math.PI;
+    num.position.set(0, 0.35, z);
+    group.add(num);
+  }
+
+  // Perimeter road east of the apron + two low-poly cars.
+  addBox(asphaltDark, 18, 0.6, 600, 249, BY - 0.6, 0);
+  function buildCar(bodyCol, x, z, ry) {
+    const car = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(4.5, 1.1, 2.2),
+      new THREE.MeshLambertMaterial({ color: bodyCol }));
+    body.position.y = 0.9;
+    body.castShadow = true;
+    car.add(body);
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.9, 2.0), glassMat);
+    cabin.position.set(-0.2, 1.85, 0);
+    car.add(cabin);
+    for (const [wx, wz] of [[-1.5, 1.1], [1.5, 1.1], [-1.5, -1.1], [1.5, -1.1]]) {
+      const w = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.4, 8), dark);
+      w.rotation.x = Math.PI / 2;
+      w.position.set(wx, 0.5, wz);
+      car.add(w);
+    }
+    car.position.set(x, BY, z);
+    car.rotation.y = ry;
+    group.add(car);
+  }
+  buildCar(0xc0392b, 249, -100, 0.1);
+  buildCar(0x2a6db0, 249, 120, -0.15);
+
+  // Fence posts + rail along the apron's east edge.
+  const postGeo = new THREE.CylinderGeometry(0.18, 0.18, 3, 6);
+  const posts = new THREE.InstancedMesh(postGeo, steel, 17);
+  const m = new THREE.Matrix4();
+  for (let i = 0; i < 17; i++) {
+    m.makeTranslation(226, BY + 1.5, -110 + i * 24);
+    posts.setMatrixAt(i, m);
+  }
+  posts.instanceMatrix.needsUpdate = true;
+  group.add(posts);
+  const rail = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.25, 390), steel);
+  rail.position.set(226, BY + 3, 80);
+  group.add(rail);
+
+  group.position.set(World.runway.x, World.runway.height, World.runway.z);
+  scene.add(group);
+}
+
+/** Animate the airport's live bits: the tower beacon blinks, the
+ *  windsock swings with the wind. */
+function updateAirport(S) {
+  if (towerBeacon) towerBeacon.visible = Math.sin(S.time * 2.2) > 0;
+  if (windsockPivot) {
+    windsockPivot.rotation.y = 0.3 + Math.sin(S.time * 0.5) * 0.5;
+    windsockPivot.rotation.z = -0.12 + Math.sin(S.time * 0.8) * 0.05;
+  }
+}
+
 // ------------------------------------------------------------------ rings
 
 const ringMeshes = [];
@@ -1108,6 +1477,7 @@ buildPalms();
 buildFarIslands();
 buildClouds();
 buildRunway();
+buildAirport();
 buildRings();
 
 const camTarget = new THREE.Vector3();
@@ -1144,6 +1514,7 @@ function draw(S) {
   plane.userData.strobeR.visible = !blink && Math.sin(S.time * 6 + 1.2) > 0.55;
 
   updateRings(S);
+  updateAirport(S);
 
   // v6 ring burst: main.js arms S.shotBurst on a pass (and the burst
   // pose carries one); draw() fires it once and holds the bloom while
