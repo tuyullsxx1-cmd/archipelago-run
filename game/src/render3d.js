@@ -191,10 +191,10 @@ function buildSea() {
   // Foam rings where the sea meets each island, so the shoreline reads
   // as surf instead of a hard green/blue edge.
   foamMat = new THREE.MeshBasicMaterial({
-    color: 0xf2fbff, transparent: true, opacity: 0.34, side: THREE.DoubleSide,
+    color: 0xf2fbff, transparent: true, opacity: 0.20, side: THREE.DoubleSide,
   });
   const addFoam = (x, z, r) => {
-    const ring = new THREE.Mesh(new THREE.RingGeometry(r * 0.94, r * 1.07, 40), foamMat);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(r * 0.97, r * 1.03, 40), foamMat);
     ring.rotation.x = -Math.PI / 2;
     ring.position.set(x, 0.75, z);
     scene.add(ring);
@@ -483,33 +483,42 @@ let cloudTex = null;
 
 function buildClouds() {
   cloudTex = makeCloudPuffTexture();
-  for (const c of World.clouds) {
+  const addCloudGroup = (cx, cy, cz, s) => {
     const group = new THREE.Group();
     // Four to six layered soft billboards per cloud: from any angle the
     // cloud reads as volume with a dissolving edge, not stacked balls.
-    const puffs = 4 + Math.floor(hashJitter(c.x, c.z) * 3);
+    const puffs = 4 + Math.floor(hashJitter(cx, cz) * 3);
     for (let i = 0; i < puffs; i++) {
-      const f = 0.7 + hashJitter(c.x + i * 13, c.z) * 0.7;
+      const f = 0.7 + hashJitter(cx + i * 13, cz) * 0.7;
       const mat = new THREE.SpriteMaterial({
         map: cloudTex, transparent: true,
-        opacity: 0.5 + hashJitter(c.z, c.x + i) * 0.35,
+        opacity: 0.5 + hashJitter(cz, cx + i) * 0.35,
         depthWrite: false,
       });
       const spr = new THREE.Sprite(mat);
-      const w = c.s * 2.4 * f;
+      const w = s * 2.4 * f;
       spr.scale.set(w, w * 0.42, 1);
       spr.position.set(
-        (hashJitter(i * 7, c.x) - 0.5) * c.s * 1.5,
-        (hashJitter(i * 3, c.z) - 0.5) * c.s * 0.35,
-        (hashJitter(c.x, i * 11) - 0.5) * c.s * 0.9
+        (hashJitter(i * 7, cx) - 0.5) * s * 1.5,
+        (hashJitter(i * 3, cz) - 0.5) * s * 0.35,
+        (hashJitter(cx, i * 11) - 0.5) * s * 0.9
       );
       group.add(spr);
     }
-    group.position.set(c.x, c.y, c.z);
-    group.userData.baseX = c.x;
+    group.position.set(cx, cy, cz);
+    group.userData.baseX = cx;
     scene.add(group);
     cloudPuffs.push(group);
-  }
+  };
+  for (const c of World.clouds) addCloudGroup(c.x, c.y, c.z, c.s);
+
+  // Approach-corridor clouds: the final-approach and landing frames look
+  // straight down the course past Coral Bay, so the sky ahead of the
+  // runway needs its own clouds or it reads as one flat orange wall.
+  for (const [x, y, z, s] of [
+    [-700, 520, 10100, 150], [500, 640, 10600, 180], [0, 760, 11200, 200],
+    [-1200, 600, 10800, 130], [1100, 480, 9900, 120],
+  ]) addCloudGroup(x, y, z, s);
 
   // High thin cirrus streaks near the horizon for depth.
   for (let i = 0; i < 6; i++) {
@@ -522,6 +531,20 @@ function buildClouds() {
       (hashJitter(i * 17, 3) - 0.5) * 7000,
       720 + hashJitter(i * 23, 7) * 260,
       2400 + hashJitter(i * 29, 11) * 7000
+    );
+    scene.add(spr);
+  }
+  // Cirrus ahead of the runway, for the landing frame.
+  for (let i = 0; i < 3; i++) {
+    const mat = new THREE.SpriteMaterial({
+      map: cloudTex, transparent: true, opacity: 0.30, depthWrite: false,
+    });
+    const spr = new THREE.Sprite(mat);
+    spr.scale.set(1800 + hashJitter(i * 31, 5) * 1200, 110, 1);
+    spr.position.set(
+      (hashJitter(i * 37, 9) - 0.5) * 3200,
+      680 + hashJitter(i * 41, 13) * 220,
+      10200 + hashJitter(i * 43, 17) * 1400
     );
     scene.add(spr);
   }
@@ -1021,7 +1044,7 @@ function draw(S) {
     const s = 1 + Math.sin(S.time * 0.9 + f.phase) * 0.02;
     f.mesh.scale.setScalar(s);
   }
-  if (foamMat) foamMat.opacity = 0.30 + Math.sin(S.time * 0.9) * 0.07;
+  if (foamMat) foamMat.opacity = 0.18 + Math.sin(S.time * 0.9) * 0.05;
 
   // Clouds drift slowly downwind.
   for (const g of cloudPuffs) {
