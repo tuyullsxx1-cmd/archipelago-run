@@ -8,6 +8,10 @@ A complete golden-hour flight game: fly a bush plane over a tropical
 archipelago, thread all 8 glowing target rings, watch your fuel, and land
 on the Coral Bay runway before the timer runs out.
 
+## What's new in v8
+
+Four points, all landed. **(1) More HD/real:** a bigger dominant terminal with jet bridges, a radar dome, a reflective glass front with 3D mullions and a CORAL BAY sign on the south face that stays legible from the approach; a taller tower with a lit cab and a second beacon on the terminal roof; four bigger parked planes in varied liveries; worn asphalt with rubber touchdown zones, bigger runway numbers, aiming-point bars and mast-mounted approach lights with sequenced strobes; apron panel seams, tire marks and oil stains; bigger windsocks; a wider shadow frustum, low scud clouds and grass tufts on the home island. **(2) Living airport:** one plane taxis up a full-length parallel taxiway, one car drives the perimeter road, a baggage cart works the apron, floodlights glow over the stands, and wind gusts stream the windsocks. **(3) New cover:** the peak moment — ring 8 bursts gold right ahead with the airport behind it, combo ×5, score popup rising. **(4) Deeper gameplay:** wind gusts push the plane (shown on the HUD as a wind readout) and a Mayday mission (press M on the title screen) — one run at 22% fuel, 2:30 on the clock, dusk lighting, +2000 for bringing her home. The strip, the landing zone and the touchdown rule are unchanged, and so is the v6/v7 feel.
+
 ## What's new in v7
 
 Coral Bay is a real airport now: a terminal with a lit glass front and a CORAL BAY sign, a control tower with a blinking beacon, two arched hangars, parked planes on the apron, a taxiway, a fuel truck and drums, a windsock, runway numbers (36/18), PAPI lights and a perimeter road with cars. All real 3D geometry — the strip, the landing zone and the touchdown rule are unchanged, and so is the v6 feel (195 kt start, combo, burst, beacon).
@@ -21,7 +25,7 @@ server). No network requests, no build step.
 - **↑ / ↓** — climb & dive
 - **← / →** (or **A / D**) — bank & turn
 - **Mouse** — steer toward the pointer · **Wheel** — throttle · **Space** — brake
-- **Enter** — start · **P** — pause · **R** — fly again
+- **Enter** — start · **P** — pause · **R** — fly again · **M** — arm/disarm the Mayday run (title screen: 22% fuel, 2:30, dusk, +2000 landing bonus)
 
 Rings score points and refuel you (+14 fuel each). Land on the runway with
 all 8 rings flown for the full +1000 touchdown bonus. Clip an island, ditch

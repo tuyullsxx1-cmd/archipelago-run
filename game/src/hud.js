@@ -214,7 +214,7 @@ const Hud = (() => {
     ctx.fillStyle = '#fff3d6';
     ctx.font = 'bold 12px system-ui, sans-serif';
     ctx.fillText('FUEL', 216, 104);
-    // v6 combo badge: the chain is the score engine, so it reads loud.
+    // v8 combo badge: the chain is the score engine, so it reads loud.
     if (S.combo >= 2) {
       ctx.save();
       ctx.font = 'bold 20px system-ui, sans-serif';
@@ -222,6 +222,27 @@ const Hud = (() => {
       ctx.shadowColor = '#000';
       ctx.shadowBlur = 6;
       ctx.fillText('COMBO ×' + S.combo + '  +' + ((S.combo - 1) * 50) + ' BONUS', 18, 132);
+      ctx.restore();
+    }
+    // v8 wind readout: the gust factor as knots, with an arrow showing
+    // which way it pushes the plane (the same gust the windsocks show).
+    const w = S.wind || 0;
+    const kt = Math.round(w * 18);
+    ctx.save();
+    ctx.font = 'bold 15px system-ui, sans-serif';
+    ctx.fillStyle = '#cfe8c9';
+    ctx.shadowColor = '#000';
+    ctx.shadowBlur = 4;
+    ctx.fillText('WIND  ' + kt + ' KT  ' + ((w - 0.6) >= 0 ? '→' : '←'), 18, 156);
+    ctx.restore();
+    // v8 Mayday tag: the mission reads on the HUD from frame one.
+    if (S.mayday) {
+      ctx.save();
+      ctx.font = 'bold 15px system-ui, sans-serif';
+      ctx.fillStyle = '#ff6b6b';
+      ctx.shadowColor = '#000';
+      ctx.shadowBlur = 4;
+      ctx.fillText('⚠ MAYDAY — LOW FUEL RUN', 18, 178);
       ctx.restore();
     }
     ctx.restore();
@@ -385,6 +406,12 @@ const Hud = (() => {
     ctx.fillText('W / S — throttle      ↑ / ↓ — climb & dive      ← / → — bank & turn', CX, 612);
     ctx.fillText('Mouse — steer toward the pointer      Wheel — throttle      Space — brake', CX, 638);
     ctx.fillText('Fly through all 8 rings, then land on Coral Bay runway before time runs out.', CX, 664);
+    // v8 Mayday: M on the title screen arms the low-fuel dusk run.
+    ctx.fillStyle = S.mayday ? '#ff6b6b' : '#ffd27a';
+    ctx.font = 'bold 18px system-ui, sans-serif';
+    ctx.fillText(S.mayday
+      ? '⚠ MAYDAY ARMED — fuel 22%, 2:30 on the clock, dusk landing, +2000 bonus'
+      : 'M — MAYDAY RUN: fuel 22%, 2:30 on the clock, dusk landing, +2000 bonus', CX, 560);
     ctx.fillStyle = '#7ee787';
     ctx.font = 'bold 20px system-ui, sans-serif';
     ctx.fillText(S.best > 0
@@ -449,8 +476,10 @@ const Hud = (() => {
         'Score ' + Math.round(S.score) + '  •  Rings ' + S.nextRing + '/' + World.rings.length + '  •  Best ' + S.best,
       ], '#ffb84d');
     } else if (S.state === 'landed') {
-      endCard(S, 'TOUCHDOWN!', [
-        'You landed on Coral Bay runway. The archipelago is yours.',
+      endCard(S, S.mayday ? 'MAYDAY LANDED!' : 'TOUCHDOWN!', [
+        S.mayday
+          ? 'You brought her home on fumes — MAYDAY BONUS +2000.'
+          : 'You landed on Coral Bay runway. The archipelago is yours.',
         'Score ' + Math.round(S.score) + '  •  Rings ' + S.nextRing + '/' + World.rings.length + '  •  Best ' + S.best,
       ], '#7ee787');
     }

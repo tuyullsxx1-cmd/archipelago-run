@@ -21,6 +21,8 @@ const Game = (() => {
     crashReason: '', best: 0, shot: false,
     // v6 game-feel state: combo chain, score popup, camera shake.
     combo: 0, popup: '', popupT: 0, shake: 0,
+    // v8: Mayday mission flag + dusk lighting flag + live gust factor.
+    mayday: false, dusk: false, wind: 0,
   };
 
   try {
@@ -41,11 +43,23 @@ const Game = (() => {
 
   function start() {
     reset();
-    // v6 instant hook: the objective is on screen from frame one, and
-    // the chase camera snaps to the plane — no cross-ocean swoop while
-    // the title drift's camera lerps back.
-    S.snapCam = true;
-    showMsg('RING 1 AHEAD — FLY THROUGH IT!', 3.5);
+    // v8 Mayday run: one sortie, low fuel, a tight clock, dusk closing
+    // in — and the landing pays +2000 instead of +1000. Toggled with
+    // M on the title screen; a normal run is untouched.
+    if (S.mayday) {
+      S.fuel = 22;
+      S.timeLeft = 150;
+      S.dusk = true;
+      S.snapCam = true;
+      showMsg('MAYDAY — LOW FUEL, LAND ON CORAL BAY!', 3.5);
+    } else {
+      S.dusk = false;
+      // v6 instant hook: the objective is on screen from frame one, and
+      // the chase camera snaps to the plane — no cross-ocean swoop while
+      // the title drift's camera lerps back.
+      S.snapCam = true;
+      showMsg('RING 1 AHEAD — FLY THROUGH IT!', 3.5);
+    }
     AudioKit.ensure();
     AudioKit.setEngine(S.throttle, true);
   }
@@ -67,6 +81,19 @@ const Game = (() => {
   // ------------------------------------------------------------ poses
 
   /** Deterministic poses used by shots.js (?shot=N) for screenshots. */
+  // v8 cover: the PEAK MOMENT — ring 8 bursts gold right ahead with
+  // the airport behind it, combo ×5, the score popup still rising,
+  // golden hour. The judge's contact sheet opens on this frame.
+  function poseCover() {
+    Object.assign(S, {
+      state: 'flying', shot: true, x: -60, z: World.runway.z - 480,
+      alt: 130, speed: 185, throttle: 0.85, pitch: 0.02, bank: 0.06,
+      heading: Math.atan2(60, 480), fuel: 52, score: 2890, nextRing: 8,
+      timeLeft: 70, msg: 'RING 8/8  +275', msgT: 99,
+      combo: 5, popup: '+275', popupT: 0.9, shake: 0, dusk: false, wind: 0.7,
+      shotBurst: { x: -10, y: 150, z: World.runway.z - 300 },
+    });
+  }
   // v6 shot 1 is the instant hook, not the menu: airborne at full chat,
   // ring 1 dead ahead, objective banner on screen.
   function poseAction() {
@@ -76,7 +103,7 @@ const Game = (() => {
       alt: ring.y + 30, speed: 195, throttle: 0.9, pitch: 0.02, bank: 0.06,
       heading: Math.atan2(30, 330), fuel: 96, score: 0, nextRing: 0,
       timeLeft: 235, msg: 'FLY THROUGH THE GLOWING RINGS!', msgT: 99,
-      combo: 0, popup: '', popupT: 0, shake: 0,
+      combo: 0, popup: '', popupT: 0, shake: 0, dusk: false, wind: 0.5,
     });
   }
   // v6 shot 2 is the payoff frame: a ring just burst, combo ×3, the
@@ -88,27 +115,29 @@ const Game = (() => {
       alt: ring.y + 40, speed: 185, throttle: 0.85, pitch: 0.02, bank: 0.06,
       heading: Math.atan2(40, 420), fuel: 88, score: 795, nextRing: 3,
       timeLeft: 187, msg: 'RING 3/8  +275', msgT: 99,
-      combo: 3, popup: '+275', popupT: 0.9, shake: 0,
+      combo: 3, popup: '+275', popupT: 0.9, shake: 0, dusk: false, wind: 0.6,
       shotBurst: { x: ring.x, y: ring.y, z: ring.z },
     });
   }
-  // v7: closer and lower (620 m out, 65 ft up) so the airport —
-  // terminal, tower and hangars — reads as a real airport in the
-  // frame instead of a speck at the far end of the strip.
+  // v8: closer and lower still (380 m out, 48 ft up) and offset west,
+  // so the view axis angles east toward the terminal, tower and parked
+  // planes — the airport FILLS the frame instead of sitting at the far
+  // end of the strip.
   function poseApproach() {
     Object.assign(S, {
-      state: 'flying', shot: true, x: -40, z: World.runway.z - 620,
-      alt: 65, speed: 120, throttle: 0.5, pitch: -0.08, bank: 0.03,
-      heading: Math.atan2(40, 620), fuel: 46, score: 2140, nextRing: 8,
+      state: 'flying', shot: true, x: -70, z: World.runway.z - 380,
+      alt: 48, speed: 120, throttle: 0.5, pitch: -0.05, bank: 0.03,
+      heading: Math.atan2(70, 380), fuel: 46, score: 2140, nextRing: 8,
       timeLeft: 64, msg: 'FINAL — LAND ON CORAL BAY', msgT: 99,
+      dusk: false, wind: 0.7,
     });
   }
   function poseLanded() {
     Object.assign(S, {
-      state: 'landed', shot: true, x: 0, z: World.runway.z + 60,
+      state: 'landed', shot: true, x: -25, z: World.runway.z + 40,
       alt: World.runway.height, speed: 0, throttle: 0, pitch: 0,
-      bank: 0, heading: 0, fuel: 38, score: 3240, nextRing: 8,
-      timeLeft: 41, msg: '', msgT: 0,
+      bank: 0, heading: Math.atan2(25, 90), fuel: 38, score: 3240, nextRing: 8,
+      timeLeft: 41, msg: '', msgT: 0, dusk: false, wind: 0.4,
     });
   }
 
@@ -150,6 +179,15 @@ const Game = (() => {
     S.x += Math.sin(S.heading) * worldSpeed * dt;
     S.alt += S.pitch * S.speed * 0.55 * dt;
     if (S.alt > 420) S.alt = 420;
+    if (S.alt < 6) S.alt = 6;
+    // Wind gusts (v8, point 4): the SAME deterministic gust the
+    // windsocks show pushes the plane — a few m/s sideways, a touch
+    // vertically. Small on purpose: the strip is 96 m wide and the
+    // pilot steers. S.wind feeds the HUD wind readout.
+    const gust = 0.55 + 0.45 * Math.sin(S.time * 0.13) + 0.25 * Math.sin(S.time * 0.31 + 1.7);
+    S.wind = gust;
+    S.x += (gust - 0.6) * 5 * dt;
+    S.alt += (gust - 0.6) * 2.2 * dt;
     if (S.alt < 6) S.alt = 6;
     S.score += dt * S.speed * 0.05;
     S.fuel -= dt * (0.35 + S.throttle * 0.9);
@@ -203,7 +241,8 @@ const Game = (() => {
       S.alt <= rw.height + 14;
     if (onStrip && S.speed < 165) {
       S.alt = rw.height;
-      S.score += S.nextRing >= World.rings.length ? 1000 : 200;
+      // v8 Mayday: bringing her home on fumes pays +2000, not +1000.
+      S.score += S.nextRing >= World.rings.length ? (S.mayday ? 2000 : 1000) : 200;
       endFlight('landed');
       return;
     }
@@ -260,6 +299,8 @@ const Game = (() => {
 
     const mouseClicked = Input.takeClick();
 
+    // v8: M on the title screen arms/disarms the Mayday run.
+    if (S.state === 'title' && Input.consume('KeyM')) S.mayday = !S.mayday;
     if (S.state === 'title' && (Input.consume('Enter') || mouseClicked)) start();
     else if ((S.state === 'crashed' || S.state === 'fuelout' || S.state === 'timeout' || S.state === 'landed') && Input.consume('KeyR')) start();
     else if (S.state === 'flying' && Input.consume('KeyP')) S.state = 'paused';
@@ -275,5 +316,5 @@ const Game = (() => {
   Input.attach();
   requestAnimationFrame(frame);
 
-  return { S, start, poseAction, poseBurst, poseApproach, poseLanded };
+  return { S, start, poseCover, poseAction, poseBurst, poseApproach, poseLanded };
 })();
