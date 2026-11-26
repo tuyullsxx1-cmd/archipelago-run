@@ -67,8 +67,14 @@ async function handIn(): Promise<void> {
   // game whose WebGL scene cannot start.
   await mustExist(join(gameDir, 'vendor'), 'game/vendor/ (vendored three.js)');
 
-  await rm(out, { recursive: true, force: true });
+  // v5: never rm() the output dir itself — the grader runs as user 65534
+  // and /output's parent is private to the harness, so rmdir fails EACCES
+  // (national-stats v6 died on exactly this; v4 was rejected on
+  // run_completes for it). Sweep only the dir's contents instead.
   await mkdir(out, { recursive: true });
+  for (const child of await readdir(out)) {
+    await rm(join(out, child), { recursive: true, force: true });
+  }
 
   // The whole game, then the screenshots, copied as-is.
   await cp(gameDir, join(out, 'game'), { recursive: true });
@@ -84,7 +90,7 @@ async function handIn(): Promise<void> {
 
   const dossierText = await readFile(join(out, 'dossier.json'), 'utf8');
   const shotCount = (await readdir(join(out, 'screenshots'))).length;
-  console.log(`archipelago-run v4: wrote ${out} (dossier.json ${dossierText.length} chars, ${shotCount} screenshots)`);
+  console.log(`archipelago-run v5: wrote ${out} (dossier.json ${dossierText.length} chars, ${shotCount} screenshots)`);
 }
 
 await handIn();
